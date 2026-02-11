@@ -1,0 +1,38 @@
+{
+  "feature_name": "core-agent-foundation",
+  "current_phase": "3",
+  "phase_status": {
+    "branch_setup": "completed",
+    "design_1a": "completed",
+    "design_1b": "completed",
+    "design_1c": "completed",
+    "user_stories": "completed",
+    "code_spec": "completed",
+    "implementation": "not_started"
+  },
+  "artifacts": {
+    "design_docs": {
+      "1a_discovery": ".monkeymode/core-agent-foundation/design/1a-discovery.md",
+      "1b_contracts": ".monkeymode/core-agent-foundation/design/1b-contracts.md",
+      "1c_operations": ".monkeymode/core-agent-foundation/design/1c-operations.md"
+    },
+    "user_stories_doc": ".monkeymode/core-agent-foundation/user_stories.md",
+    "code_specs": [
+      ".monkeymode/core-agent-foundation/code_specs/story-2-spec.md",
+      ".monkeymode/core-agent-foundation/code_specs/story-3-spec.md"
+    ],
+    "qa_log": ".monkeymode/core-agent-foundation/qa-log.md"
+  },
+  "context": {
+    "save_qa_log": true,
+    "branch": "core",
+    "repos": ["monkey-bot"],
+    "sync_with_develop": false,
+    "branch_setup_completed": true,
+    "open_source_project": true,
+    "team_size": 3,
+    "selected_story": 3,
+    "timeline": "no timeline concerns"
+  },
+  "last_updated": "2026-02-11T22:45:00Z"
+}
