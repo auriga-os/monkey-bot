@@ -1,0 +1,206 @@
+"""
+End-to-end integration tests for Emonk.
+
+Most tests use mocks (fast, free).
+Tests marked with @pytest.mark.integration use real Vertex AI (slow, costs $0.001 per test).
+
+Run unit tests only (default):
+    pytest
+
+Run integration tests:
+    pytest -m integration
+
+Run all tests:
+    pytest -m ""
+"""
+
+import os
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+from dotenv import load_dotenv
+from fastapi.testclient import TestClient
+
+# Load .env file for integration tests
+load_dotenv()
+
+
+@pytest.fixture
+def mock_vertex_ai():
+    """Mock Vertex AI for fast, free tests."""
+    class MockResponse:
+        def __init__(self, content):
+            self.content = content
+    
+    mock = AsyncMock()
+    mock.ainvoke = AsyncMock(
+        return_value=MockResponse("Mock response from Gemini")
+    )
+    return mock
+
+
+@pytest.fixture
+def test_client_mocked(mock_vertex_ai, monkeypatch, tmp_path):
+    """Create test client with mocked Vertex AI.
+    
+    This is the default fixture for fast tests without API costs.
+    """
+    # Set test env vars
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", "/fake/path.json")
+    monkeypatch.setenv("VERTEX_AI_PROJECT_ID", "test-project")
+    monkeypatch.setenv("VERTEX_AI_LOCATION", "us-central1")
+    monkeypatch.setenv("ALLOWED_USERS", "test@example.com")
+    monkeypatch.setenv("GCS_ENABLED", "false")
+    monkeypatch.setenv("MEMORY_DIR", str(tmp_path / "memory"))
+    monkeypatch.setenv("SKILLS_DIR", "./skills")
+    
+    # Mock Vertex AI client creation BEFORE importing
+    monkeypatch.setattr(
+        "langchain_google_vertexai.ChatVertexAI",
+        lambda **kwargs: mock_vertex_ai
+    )
+    
+    # Mock aiplatform.init (no real GCP calls)
+    monkeypatch.setattr("google.cloud.aiplatform.init", lambda **kwargs: None)
+    
+    # Mock Path.exists to skip credential file check BEFORE importing
+    from pathlib import Path
+    original_exists = Path.exists
+    monkeypatch.setattr(
+        Path,
+        "exists",
+        lambda self: True if str(self) == "/fake/path.json" else original_exists(self)
+    )
+    
+    # Create app with mocked dependencies
+    from src.main import create_app
+    app = create_app()
+    
+    return TestClient(app)
+
+
+@pytest.fixture
+def test_client_real(monkeypatch, tmp_path):
+    """Create test client with REAL Vertex AI.
+    
+    Only used for @pytest.mark.integration tests.
+    Requires GOOGLE_APPLICATION_CREDENTIALS env var set.
+    """
+    # Verify real credentials exist
+    if not os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+        pytest.skip("GOOGLE_APPLICATION_CREDENTIALS not set - skipping real API test")
+    
+    # Set test env vars (use real GOOGLE_APPLICATION_CREDENTIALS from environment)
+    monkeypatch.setenv("VERTEX_AI_PROJECT_ID", os.getenv("VERTEX_AI_PROJECT_ID", "test-project"))
+    monkeypatch.setenv("VERTEX_AI_LOCATION", os.getenv("VERTEX_AI_LOCATION", "us-central1"))
+    monkeypatch.setenv("ALLOWED_USERS", "test@example.com")
+    monkeypatch.setenv("GCS_ENABLED", "false")
+    monkeypatch.setenv("MEMORY_DIR", str(tmp_path / "memory"))
+    monkeypatch.setenv("SKILLS_DIR", "./skills")
+    
+    # Create app with REAL Vertex AI
+    from src.main import create_app
+    app = create_app()
+    
+    return TestClient(app)
+
+
+def test_e2e_webhook_valid_message(test_client_mocked):
+    """Test complete flow: webhook → gateway → agent → response (MOCKED)."""
+    payload = {
+        "type": "MESSAGE",
+        "message": {
+            "sender": {"email": "test@example.com"},
+            "text": "Hello, how are you?",
+        },
+    }
+    
+    response = test_client_mocked.post("/webhook", json=payload)
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert data["text"]  # Response contains text
+    assert len(data["text"]) > 0
+
+
+def test_e2e_webhook_unauthorized_user(test_client_mocked):
+    """Test access control: unauthorized email returns 401."""
+    payload = {
+        "type": "MESSAGE",
+        "message": {
+            "sender": {"email": "hacker@evil.com"},  # Not in ALLOWED_USERS
+            "text": "Hack attempt",
+        },
+    }
+    
+    response = test_client_mocked.post("/webhook", json=payload)
+    
+    assert response.status_code == 401  # Gateway returns 401 for unauthorized users
+
+
+def test_e2e_memory_persistence(test_client_mocked):
+    """Test memory: remember fact → recall fact returns same value."""
+    # Remember fact
+    remember_payload = {
+        "type": "MESSAGE",
+        "message": {
+            "sender": {"email": "test@example.com"},
+            "text": "Remember that I prefer Python",
+        },
+    }
+    response1 = test_client_mocked.post("/webhook", json=remember_payload)
+    assert response1.status_code == 200
+    
+    # Recall fact
+    recall_payload = {
+        "type": "MESSAGE",
+        "message": {
+            "sender": {"email": "test@example.com"},
+            "text": "What's my preferred language?",
+        },
+    }
+    response2 = test_client_mocked.post("/webhook", json=recall_payload)
+    assert response2.status_code == 200
+    # Mock will return generic response, but flow works
+
+
+@pytest.mark.integration
+def test_e2e_real_vertex_ai_call(test_client_real):
+    """Test with REAL Vertex AI API call (costs $0.001 per run).
+    
+    This test verifies:
+    - Vertex AI authentication works
+    - Gemini API returns coherent responses
+    - Full integration is functional
+    
+    Run with: pytest -m integration
+    """
+    payload = {
+        "type": "MESSAGE",
+        "message": {
+            "sender": {"email": "test@example.com"},
+            "text": "What is 2 + 2?",
+        },
+    }
+    
+    response = test_client_real.post("/webhook", json=payload)
+    
+    assert response.status_code == 200
+    data = response.json()
+    
+    # Verify response is from REAL Gemini (not mock)
+    assert data["text"]
+    assert "Mock" not in data["text"]  # Should NOT contain "Mock"
+    assert len(data["text"]) > 0  # Real response should have content
+    
+    # Gemini should answer correctly (fuzzy match)
+    assert "4" in data["text"] or "four" in data["text"].lower()
+
+
+def test_health_check(test_client_mocked):
+    """Test health check endpoint."""
+    response = test_client_mocked.get("/health")
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "healthy"

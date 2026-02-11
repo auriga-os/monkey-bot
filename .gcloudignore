@@ -1,0 +1,23 @@
+# Ignore development files
+.venv/
+.env
+*.pyc
+__pycache__/
+.pytest_cache/
+.coverage
+.mypy_cache/
+.ruff_cache/
+
+# Ignore test files (not needed in production)
+tests/
+
+# Ignore local data
+data/
+
+# Ignore documentation
+docs/
+.monkeymode/
+
+# Ignore git files
+.git/
+.gitignore
