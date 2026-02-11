@@ -7,10 +7,12 @@ This module provides mock implementations that enable Sprint 1 parallel developm
 Real implementations will be wired in Story 4 (Integration).
 """
 
-from src.gateway.interfaces import AgentCoreInterface
+from __future__ import annotations
+
+import src.gateway.interfaces as interfaces
 
 
-class MockAgentCore(AgentCoreInterface):
+class MockAgentCore(interfaces.AgentCoreInterface):  # type: ignore[misc]
     """
     Mock Agent Core for Gateway testing.
 

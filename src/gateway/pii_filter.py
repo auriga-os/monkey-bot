@@ -14,7 +14,7 @@ This code has 100% test coverage requirement.
 """
 
 import hashlib
-from typing import TypedDict
+from typing import Any, TypedDict
 
 
 class FilteredMessage(TypedDict):
@@ -35,7 +35,7 @@ class FilteredMessage(TypedDict):
     content: str
 
 
-def filter_google_chat_pii(webhook_payload: dict) -> FilteredMessage:
+def filter_google_chat_pii(webhook_payload: dict[str, Any]) -> FilteredMessage:
     """
     Extract only safe fields from Google Chat webhook and hash the email.
 
