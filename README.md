@@ -1,68 +1,41 @@
-# Emonk - Lightweight AI Agent Framework
+# Emonk 🐵
 
-Emonk is an open-source framework for building single-purpose AI agents that automate tasks via Google Chat. Built with FastAPI, designed for simplicity and maintainability.
+**Open-source framework for building single-purpose AI agents**
+
+Emonk is a lightweight, flexible framework that lets you build AI agents that automate tasks via Google Chat. Add custom skills easily, persist memory across invocations, and execute commands safely with allowlist-based security.
+
+> ⚠️ **Security Warning**: Emonk's skill system executes Python scripts from the `./skills/` directory **without validation**. Only add skills from trusted sources and review all code before deployment. See [Security](#security) section below.
 
 ## Features
 
-- 🚀 **Google Chat Integration** - Receive messages via webhook, respond with Cards V2
-- 🔒 **Privacy-First** - PII filtering with email hashing before processing
-- 🛡️ **Secure** - Allowlist-based authorization, secure command execution
-- 📦 **Modular** - Clean architecture with independent, testable components
-- 🧪 **Well-Tested** - 80%+ test coverage, 100% for security-critical paths
-- ☁️ **Cloud-Ready** - Deploy to Cloud Run with minimal configuration
-
-## Architecture
-
-```
-┌─────────────┐      ┌──────────────┐      ┌────────────┐
-│ Google Chat │─────▶│   Gateway    │─────▶│ Agent Core │
-│  (Webhook)  │      │ (FastAPI)    │      │  (LLM)     │
-└─────────────┘      └──────────────┘      └────────────┘
-                            │
-                            ├─────▶ Skills Engine
-                            ├─────▶ Memory Manager
-                            └─────▶ Terminal Executor
-```
+- 🤖 **LangGraph-based Agent** - Intelligent routing and orchestration
+- 🎯 **Simple Skill System** - Add custom skills via SKILL.md + Python
+- 💾 **Persistent Memory** - File-based with optional GCS sync
+- 🔒 **Secure Execution** - Allowlist-based command/path validation
+- 💬 **Google Chat Integration** - Interact via Google Chat webhooks
+- 📊 **Structured Logging** - JSON logs with trace IDs
 
 ## Quick Start
 
 ### Prerequisites
 
 - Python 3.11+
-- Google Chat workspace
-- Google Cloud account (for deployment)
+- uv (fast Python package installer)
+- Google Cloud account (for Vertex AI)
 
-### Local Development
-
-1. **Clone and install dependencies:**
+### Installation
 
 ```bash
-git clone https://github.com/yourusername/emonk.git
+# Clone repository
+git clone https://github.com/auriga-os/emonk.git
 cd emonk
-python -m venv .venv
+
+# Create virtual environment
+uv venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-```
 
-2. **Configure environment:**
-
-```bash
-cp .env.example .env
-# Edit .env and set your ALLOWED_USERS
-```
-
-3. **Run the server:**
-
-```bash
-python -m src.gateway.main
-```
-
-Server will start at `http://localhost:8080`
-
-4. **Test the health endpoint:**
-
-```bash
-curl http://localhost:8080/health
+# Install dependencies
+uv pip install -e ".[dev]"
 ```
 
 ### Running Tests
@@ -71,181 +44,244 @@ curl http://localhost:8080/health
 # Run all tests
 pytest
 
-# Run with coverage report
-pytest --cov=src --cov-report=html
+# Run with coverage
+pytest --cov=src --cov-report=term-missing
 
 # Run specific test file
-pytest tests/gateway/test_pii_filter.py
+pytest tests/core/test_agent.py
 
 # Run with verbose output
 pytest -v
 ```
 
-### Code Quality Checks
+### Type Checking
 
 ```bash
-# Type checking
+# Check types
 mypy src/
+```
 
-# Code formatting (check only)
-black --check src/ tests/
+### Code Formatting
 
-# Code formatting (apply)
-black src/ tests/
+```bash
+# Format code
+ruff format src/ tests/
 
-# Linting
+# Check linting
 ruff check src/ tests/
+
+# Auto-fix linting issues
+ruff check src/ tests/ --fix
 ```
 
-## Project Structure
+## Project Status
+
+**Current Phase**: Sprint 1 - Core Foundation
+
+### Completed (Story 2)
+- ✅ Core interfaces (single source of truth)
+- ✅ Agent Core with LangGraph
+- ✅ LLM Client (Vertex AI wrapper)
+- ✅ Mock dependencies for parallel development
+- ✅ Comprehensive unit tests (80%+ coverage)
+- ✅ Type checking (mypy strict mode)
+- ✅ Code formatting (ruff)
+
+### In Progress (Sprint 1)
+- 🚧 Story 1: Gateway Module (Google Chat integration)
+- 🚧 Story 3: Skills Engine + Terminal Executor + Memory Manager
+
+### Upcoming (Sprint 2)
+- 📅 Story 4: Integration & Cloud Run Deployment
+- 📅 Real Vertex AI integration
+- 📅 Streaming support
+- 📅 Production deployment
+
+## Architecture
 
 ```
-emonk/
-├── src/
-│   ├── gateway/           # HTTP interface & Google Chat integration
-│   │   ├── server.py      # FastAPI application
-│   │   ├── interfaces.py  # Agent Core interface contract
-│   │   ├── models.py      # Pydantic models
-│   │   ├── pii_filter.py  # Privacy filtering
-│   │   ├── mocks.py       # Mock implementations for testing
-│   │   └── main.py        # Entry point
-│   ├── core/              # Agent orchestration (Story 2)
-│   ├── skills/            # Skills engine (Story 3)
-│   └── __init__.py
-├── tests/
-│   └── gateway/
-│       ├── test_server.py
-│       ├── test_pii_filter.py
-│       └── test_google_chat.py
-├── requirements.txt       # Python dependencies
-├── pyproject.toml        # Tool configuration
-├── .env.example          # Environment variable template
-└── README.md
+┌─────────────────────────────────────────────┐
+│           Gateway (Google Chat)             │
+│         POST /webhook, GET /health          │
+└──────────────────┬──────────────────────────┘
+                   │
+                   ▼
+┌─────────────────────────────────────────────┐
+│            Agent Core (LangGraph)            │
+│   - Message routing & orchestration         │
+│   - Conversation context (last 10 msgs)     │
+│   - LLM integration (Gemini 2.5 Flash)      │
+└──┬──────────────┬──────────────┬────────────┘
+   │              │              │
+   ▼              ▼              ▼
+┌────────┐  ┌──────────┐  ┌──────────┐
+│Skills  │  │Terminal  │  │Memory    │
+│Engine  │  │Executor  │  │Manager   │
+└────────┘  └──────────┘  └──────────┘
 ```
 
-## Configuration
+## Usage
 
-### Environment Variables
+### Basic Example (with Mocks)
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `ALLOWED_USERS` | Comma-separated list of authorized emails | `user@example.com,admin@example.com` |
-| `LOG_LEVEL` | Logging level | `INFO` (default), `DEBUG`, `WARNING` |
-| `PORT` | Server port | `8080` (default) |
+```python
+from src.core import create_agent_with_mocks
 
-## API Endpoints
+# Create agent with mock dependencies
+agent = create_agent_with_mocks()
 
-### POST /webhook
+# Process a message
+response = await agent.process_message(
+    user_id="user_123",
+    content="Hello, how are you?",
+    trace_id="trace_abc"
+)
 
-Handle incoming Google Chat messages.
-
-**Request:**
-```json
-{
-  "message": {
-    "sender": {"email": "user@example.com"},
-    "text": "Your message here"
-  }
-}
+print(response)
+# Output: "Hello! I'm Emonk, your AI assistant. How can I help you today?"
 ```
 
-**Response:**
-```json
-{
-  "text": "Agent response here"
-}
-```
+### Custom Agent (with Real Dependencies)
 
-### GET /health
+```python
+from src.core import AgentCore, LLMClient
+from langchain_google_vertexai import ChatVertexAI
 
-Health check endpoint for Cloud Run.
+# Create real LLM client (Story 4)
+vertex_llm = ChatVertexAI(model_name="gemini-2.5-flash-002")
+llm_client = LLMClient(vertex_llm)
 
-**Response:**
-```json
-{
-  "status": "healthy",
-  "timestamp": "2026-02-11T22:00:00Z",
-  "version": "1.0.0",
-  "checks": {
-    "agent_core": "ok"
-  }
-}
+# Create agent with real dependencies
+agent = AgentCore(
+    llm_client=llm_client,
+    skills_engine=your_skills_engine,
+    memory_manager=your_memory_manager
+)
+
+# Process messages
+response = await agent.process_message(
+    user_id="user_123",
+    content="Remember that I prefer Python",
+    trace_id="trace_xyz"
+)
 ```
 
 ## Security
 
-### PII Filtering
+### ⚠️ Critical Security Considerations
 
-Emonk filters all personally identifiable information before processing:
+**Arbitrary Code Execution Risk**
 
-- ✅ Email addresses are hashed (SHA-256, first 16 chars)
-- ✅ Google Chat metadata (space IDs, thread IDs) is stripped
-- ✅ Only message content is processed by LLM
-- ✅ User IDs are stable (same email = same hash)
+Emonk's skill system executes Python scripts from `./skills/` **without validation**. This means:
 
-### Authorization
+- ⚠️ Skills can execute arbitrary code with full agent permissions
+- ⚠️ Only add skills from trusted sources
+- ⚠️ Review ALL skill code before deployment
+- ⚠️ Skills have access to: GCS buckets, Vertex AI, Google Chat API, local filesystem
 
-- Only users in `ALLOWED_USERS` can interact with the agent
-- Authorization check happens before any processing
-- 401 Unauthorized returned for non-allowlisted users
+**This is by design** to keep the framework simple and flexible. Security is the **developer's responsibility**.
 
-## Development Workflow
+### Production Security Checklist
 
-### Adding New Features
+- [ ] Review every skill script before adding to `./skills/`
+- [ ] Use separate GCP projects for dev/prod
+- [ ] Limit service account permissions to minimum required
+- [ ] Monitor skill execution logs for unexpected behavior
+- [ ] Use allowlist for authorized user emails (`ALLOWED_USERS`)
+- [ ] Enable GCS encryption at rest
+- [ ] Rotate service account keys every 90 days
 
-1. Create feature branch: `git checkout -b feature/your-feature`
-2. Write tests first (TDD approach)
-3. Implement feature
-4. Run tests: `pytest`
-5. Run code quality checks: `mypy`, `black`, `ruff`
-6. Commit with clear message
-7. Open pull request
+### Terminal Executor Security
+
+The Terminal Executor uses allowlist-based security:
+
+**Allowed Commands** (default):
+- `cat` - Read files
+- `ls` - List directories
+- `python` - Execute Python scripts
+- `uv` - Package management
+
+**Allowed Paths** (default):
+- `./data/memory/` - Memory storage
+- `./skills/` - Skill scripts
+- `./content/` - User content
+
+Any command or path not explicitly allowed is **blocked**.
+
+## Development
+
+### Project Structure
+
+```
+emonk/
+├── src/
+│   └── core/
+│       ├── __init__.py          # Public API exports
+│       ├── interfaces.py        # ALL shared interfaces (single source of truth)
+│       ├── agent.py             # Agent Core (LangGraph)
+│       ├── llm_client.py        # LLM wrapper (Vertex AI)
+│       └── mocks.py             # Mock dependencies for testing
+├── tests/
+│   └── core/
+│       ├── test_agent.py        # Agent Core tests
+│       ├── test_llm_client.py   # LLM Client tests
+│       └── test_integration.py  # End-to-end tests
+├── pyproject.toml               # Project metadata + dependencies
+├── .python-version              # Python version (3.11)
+└── README.md                    # This file
+```
 
 ### Code Quality Standards
 
-- ✅ Type hints on all functions
-- ✅ Docstrings on all public functions
-- ✅ Test coverage ≥ 80%
-- ✅ 100% coverage for security-critical code
-- ✅ All tests passing
-- ✅ mypy type checking passing
-- ✅ Code formatted with black
-- ✅ No linting errors (ruff)
+- **Type Hints**: All functions must have type annotations (mypy strict mode)
+- **Docstrings**: All public functions/classes must have Google-style docstrings
+- **Tests**: Minimum 80% code coverage
+- **Linting**: Use ruff for linting and formatting
+- **Logging**: Structured JSON logs with trace IDs
 
-## Deployment
+### Running Development Checks
 
-### Cloud Run Deployment
-
-Coming in Story 4 (Integration & Deployment).
+```bash
+# Run all checks before committing
+pytest --cov=src --cov-report=term-missing  # Tests + coverage
+mypy src/                                    # Type checking
+ruff check src/ tests/                       # Linting
+ruff format src/ tests/                      # Formatting
+```
 
 ## Contributing
 
 We welcome contributions! Please:
 
 1. Fork the repository
-2. Create a feature branch
-3. Write tests for new features
-4. Ensure all tests pass and code quality checks pass
-5. Submit a pull request
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Run all checks (tests, type checking, linting)
+4. Commit your changes (`git commit -m 'Add amazing feature'`)
+5. Push to the branch (`git push origin feature/amazing-feature`)
+6. Open a Pull Request
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
 ## License
 
-MIT License - See LICENSE file for details
+MIT License - see [LICENSE](LICENSE) for details.
 
 ## Support
 
-- 📖 Documentation: [docs/](docs/)
-- 🐛 Issues: [GitHub Issues](https://github.com/yourusername/emonk/issues)
-- 💬 Discussions: [GitHub Discussions](https://github.com/yourusername/emonk/discussions)
+- **Issues**: [GitHub Issues](https://github.com/auriga-os/emonk/issues)
+- **Documentation**: [GitHub Wiki](https://github.com/auriga-os/emonk/wiki)
+- **Community**: [GitHub Discussions](https://github.com/auriga-os/emonk/discussions)
 
-## Roadmap
+## Acknowledgments
 
-- ✅ Phase 1: Core Foundation (Gateway, Agent Core, Skills Engine, Memory)
-- 🔲 Phase 2: Marketing Campaign Agent
-- 🔲 Phase 3: Cloud Deployment & Scaling
-- 🔲 Phase 4: Production Hardening
-- 🔲 Phase 5: Advanced Features
+Built with:
+- [LangGraph](https://github.com/langchain-ai/langgraph) - Agent orchestration
+- [LangChain](https://github.com/langchain-ai/langchain) - LLM abstractions
+- [Vertex AI](https://cloud.google.com/vertex-ai) - Gemini models
+- [FastAPI](https://fastapi.tiangolo.com/) - HTTP server
+- [pytest](https://pytest.org/) - Testing framework
+- [ruff](https://github.com/astral-sh/ruff) - Fast linter/formatter
 
 ---
 
-Built with ❤️ by the Auriga OS team
+Made with ❤️ by the Auriga OS team

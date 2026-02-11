@@ -1,38 +1,21 @@
-"""Core agent components for Emonk."""
+"""Core components for Emonk agent framework."""
 
-from .agent import AgentCore, create_agent_with_mocks
+from .terminal import TerminalExecutor, ExecutionResult, SecurityError
 from .interfaces import (
-    AgentCoreInterface,
-    AgentError,
-    EmonkError,
-    ExecutionResult,
-    LLMError,
-    MemoryManagerInterface,
     Message,
-    SecurityError,
-    SkillError,
     SkillResult,
     SkillsEngineInterface,
+    MemoryManagerInterface,
+    AgentCoreInterface,
 )
-from .llm_client import LLMClient
 
 __all__ = [
-    # Core classes
-    "AgentCore",
-    "LLMClient",
-    "create_agent_with_mocks",
-    # Interfaces
-    "AgentCoreInterface",
-    "SkillsEngineInterface",
-    "MemoryManagerInterface",
-    # Data classes
+    "TerminalExecutor",
+    "ExecutionResult",
+    "SecurityError",
     "Message",
     "SkillResult",
-    "ExecutionResult",
-    # Exceptions
-    "EmonkError",
-    "AgentError",
-    "LLMError",
-    "SkillError",
-    "SecurityError",
+    "SkillsEngineInterface",
+    "MemoryManagerInterface",
+    "AgentCoreInterface",
 ]

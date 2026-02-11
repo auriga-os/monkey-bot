@@ -1,1 +1,1 @@
-"""Test suite for Emonk."""
+"""Tests for Emonk."""
