@@ -74,28 +74,156 @@ ruff check src/ tests/
 ruff check src/ tests/ --fix
 ```
 
+## Deployment
+
+### Local Development
+
+1. **Create `.env` file:**
+   ```bash
+   cp .env.example .env
+   # Edit .env and fill in your GCP credentials
+   ```
+
+2. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **Run locally:**
+   ```bash
+   python -m src.main
+   # Or with auto-reload:
+   uvicorn src.main:app --reload --port 8080
+   ```
+
+4. **Test:**
+   ```bash
+   curl http://localhost:8080/health
+   ```
+
+### Cloud Run Deployment
+
+1. **Prerequisites:**
+   - GCP project with Vertex AI API enabled
+   - Service account with roles:
+     - Vertex AI User
+     - Storage Object Admin
+     - Cloud Run Admin
+   - GCS bucket created: `gsutil mb gs://your-bucket-name`
+
+2. **Configure `.env`:**
+   ```bash
+   # Set these in .env:
+   VERTEX_AI_PROJECT_ID=your-project-id
+   GCS_MEMORY_BUCKET=your-bucket-name
+   CLOUD_RUN_SERVICE_NAME=emonk-agent
+   CLOUD_RUN_REGION=us-central1
+   ALLOWED_USERS=user1@example.com,user2@example.com
+   ```
+
+3. **Deploy:**
+   ```bash
+   chmod +x deploy.sh
+   ./deploy.sh
+   ```
+
+4. **Configure Google Chat webhook:**
+   - Go to https://chat.google.com
+   - Create app → Webhooks
+   - Set webhook URL: `https://YOUR-SERVICE-URL/webhook`
+
+5. **Test:**
+   - Send message in Google Chat
+   - Check logs: `gcloud run logs read emonk-agent --region us-central1`
+
+## Testing
+
+### Run Unit Tests (Fast, No API Costs)
+```bash
+pytest
+```
+
+### Run Integration Tests (Real Vertex AI API)
+```bash
+# Set credentials first:
+export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+export VERTEX_AI_PROJECT_ID=your-project-id
+
+# Run integration tests:
+pytest -m integration
+```
+
+### Run All Tests with Coverage
+```bash
+pytest -m "" --cov=src --cov-report=html
+open htmlcov/index.html
+```
+
+## Environment Variables
+
+See `.env.example` for complete list of configuration options.
+
+**Required:**
+- `GOOGLE_APPLICATION_CREDENTIALS` - Path to GCP service account JSON
+- `VERTEX_AI_PROJECT_ID` - GCP project ID
+- `ALLOWED_USERS` - Comma-separated list of authorized emails
+
+**Optional:**
+- `GCS_ENABLED=false` - Enable GCS sync (default: false for local dev)
+- `GCS_MEMORY_BUCKET` - GCS bucket for memory (required if GCS_ENABLED=true)
+- `VERTEX_AI_LOCATION=us-central1` - Vertex AI region
+- `PORT=8080` - Server port
+- `LOG_LEVEL=INFO` - Log verbosity
+
+## Troubleshooting
+
+### "Missing required environment variables" error
+- Copy `.env.example` to `.env`
+- Fill in all required values (see comments in file)
+- Verify `GOOGLE_APPLICATION_CREDENTIALS` file exists
+
+### "Vertex AI authentication failed" error
+- Verify service account has Vertex AI User role
+- Download fresh service account key from GCP Console
+- Set `GOOGLE_APPLICATION_CREDENTIALS` to correct path
+
+### "GCS sync failed" error
+- Verify service account has Storage Object Admin role
+- Verify GCS bucket exists: `gsutil ls gs://your-bucket-name`
+- Check `GCS_MEMORY_BUCKET` env var matches bucket name
+
+### Tests hang on integration test
+- Verify `GOOGLE_APPLICATION_CREDENTIALS` is set
+- Check GCP quota limits (Vertex AI requests per minute)
+- Use `pytest -v` to see which test is hanging
+
 ## Project Status
 
-**Current Phase**: Sprint 1 - Core Foundation
+**Current Phase**: Sprint 1 - Core Foundation ✅ COMPLETE
 
-### Completed (Story 2)
+### Completed Stories
+- ✅ **Story 1**: Gateway Module (Google Chat integration, PII filtering, access control)
+- ✅ **Story 2**: Agent Core + LLM Client (LangGraph orchestration, Vertex AI wrapper)
+- ✅ **Story 3**: Skills Engine + Terminal Executor + Memory Manager
+- ✅ **Story 4**: Integration & Cloud Run Deployment (real Vertex AI, E2E tests)
+
+### Features
 - ✅ Core interfaces (single source of truth)
-- ✅ Agent Core with LangGraph
-- ✅ LLM Client (Vertex AI wrapper)
-- ✅ Mock dependencies for parallel development
+- ✅ Real Vertex AI integration (Gemini 2.0 Flash)
+- ✅ Google Chat webhook integration
+- ✅ File-based memory with optional GCS sync
+- ✅ Skills engine with terminal executor
 - ✅ Comprehensive unit tests (80%+ coverage)
+- ✅ Integration tests with real API
+- ✅ Cloud Run deployment ready
 - ✅ Type checking (mypy strict mode)
 - ✅ Code formatting (ruff)
 
-### In Progress (Sprint 1)
-- 🚧 Story 1: Gateway Module (Google Chat integration)
-- 🚧 Story 3: Skills Engine + Terminal Executor + Memory Manager
-
 ### Upcoming (Sprint 2)
-- 📅 Story 4: Integration & Cloud Run Deployment
-- 📅 Real Vertex AI integration
-- 📅 Streaming support
-- 📅 Production deployment
+- 📅 Streaming support for long responses
+- 📅 Additional example skills
+- 📅 Production monitoring and alerts
+- 📅 Performance optimizations
 
 ## Architecture
 

@@ -8,14 +8,13 @@ This test suite verifies the LLM client wrapper including:
 - Stream parameter acceptance
 """
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from src.core.interfaces import LLMError
 from src.core.llm_client import DEFAULT_MODEL, LLMClient
 from src.core.mocks import MockVertexAI
-
 
 # ============================================================================
 # Fixtures
@@ -42,7 +41,7 @@ def llm_client(mock_vertex_client: MockVertexAI) -> LLMClient:
 @pytest.mark.asyncio
 async def test_chat_success(llm_client: LLMClient) -> None:
     """Test successful LLM API call.
-    
+
     Verifies:
         - Client calls vertex API
         - Returns string response
@@ -62,7 +61,7 @@ async def test_chat_success(llm_client: LLMClient) -> None:
 @pytest.mark.asyncio
 async def test_chat_with_custom_model(llm_client: LLMClient) -> None:
     """Test API call with custom model.
-    
+
     Verifies:
         - Client accepts custom model parameter
         - Model parameter passed through
@@ -82,7 +81,7 @@ async def test_chat_with_custom_model(llm_client: LLMClient) -> None:
 @pytest.mark.asyncio
 async def test_chat_with_conversation_history(llm_client: LLMClient) -> None:
     """Test API call with multi-turn conversation.
-    
+
     Verifies:
         - Client handles multiple messages
         - History sent to LLM
@@ -110,7 +109,7 @@ async def test_chat_with_conversation_history(llm_client: LLMClient) -> None:
 @pytest.mark.asyncio
 async def test_stream_parameter_accepted(llm_client: LLMClient) -> None:
     """Test that stream parameter is accepted (not implemented yet).
-    
+
     Verifies:
         - stream=True doesn't cause errors
         - Response still returned (not streaming yet)
@@ -136,7 +135,7 @@ async def test_stream_parameter_accepted(llm_client: LLMClient) -> None:
 @pytest.mark.asyncio
 async def test_chat_failure_raises_llm_error(llm_client: LLMClient) -> None:
     """Test that API failures raise LLMError.
-    
+
     Verifies:
         - Exceptions caught and wrapped
         - LLMError raised
@@ -146,9 +145,7 @@ async def test_chat_failure_raises_llm_error(llm_client: LLMClient) -> None:
     messages = [{"role": "user", "content": "Test"}]
 
     # Mock client to raise exception
-    with patch.object(
-        llm_client.client, "ainvoke", side_effect=Exception("API connection failed")
-    ):
+    with patch.object(llm_client.client, "ainvoke", side_effect=Exception("API connection failed")):
         # Act & Assert
         with pytest.raises(LLMError) as exc_info:
             await llm_client.chat(messages)
@@ -160,7 +157,7 @@ async def test_chat_failure_raises_llm_error(llm_client: LLMClient) -> None:
 @pytest.mark.asyncio
 async def test_chat_timeout_raises_llm_error(llm_client: LLMClient) -> None:
     """Test that timeouts raise LLMError.
-    
+
     Verifies:
         - Timeout exceptions caught
         - LLMError raised with timeout message
@@ -185,7 +182,7 @@ async def test_chat_timeout_raises_llm_error(llm_client: LLMClient) -> None:
 @pytest.mark.asyncio
 async def test_chat_logs_correctly(llm_client: LLMClient, caplog: pytest.LogCaptureFixture) -> None:
     """Test that LLM calls are logged properly.
-    
+
     Verifies:
         - Request logged with metadata
         - Response logged with metadata
@@ -210,7 +207,7 @@ async def test_chat_logs_correctly(llm_client: LLMClient, caplog: pytest.LogCapt
 @pytest.mark.asyncio
 async def test_chat_logs_errors(llm_client: LLMClient, caplog: pytest.LogCaptureFixture) -> None:
     """Test that errors are logged properly.
-    
+
     Verifies:
         - Errors logged with ERROR level
         - Error message included
@@ -220,13 +217,12 @@ async def test_chat_logs_errors(llm_client: LLMClient, caplog: pytest.LogCapture
     messages = [{"role": "user", "content": "Test"}]
 
     # Mock client to raise exception
+    import contextlib
+
     with patch.object(llm_client.client, "ainvoke", side_effect=Exception("Test error")):
         # Act
-        with caplog.at_level("ERROR"):
-            try:
-                await llm_client.chat(messages)
-            except LLMError:
-                pass  # Expected
+        with caplog.at_level("ERROR"), contextlib.suppress(LLMError):
+            await llm_client.chat(messages)
 
         # Assert
         log_text = caplog.text
@@ -241,7 +237,7 @@ async def test_chat_logs_errors(llm_client: LLMClient, caplog: pytest.LogCapture
 @pytest.mark.asyncio
 async def test_chat_with_empty_messages(llm_client: LLMClient) -> None:
     """Test API call with empty messages list.
-    
+
     Verifies:
         - Client handles empty messages
         - No crashes
@@ -260,7 +256,7 @@ async def test_chat_with_empty_messages(llm_client: LLMClient) -> None:
 @pytest.mark.asyncio
 async def test_chat_with_very_long_message(llm_client: LLMClient) -> None:
     """Test API call with very long message.
-    
+
     Verifies:
         - Client handles long messages
         - No truncation or errors
@@ -279,7 +275,7 @@ async def test_chat_with_very_long_message(llm_client: LLMClient) -> None:
 @pytest.mark.asyncio
 async def test_chat_with_special_characters(llm_client: LLMClient) -> None:
     """Test API call with special characters.
-    
+
     Verifies:
         - Client handles Unicode, emojis
         - No encoding errors
@@ -303,7 +299,7 @@ async def test_chat_with_special_characters(llm_client: LLMClient) -> None:
 @pytest.mark.asyncio
 async def test_default_model_used(llm_client: LLMClient) -> None:
     """Test that default model is used when not specified.
-    
+
     Verifies:
         - DEFAULT_MODEL used by default
         - No errors with default
@@ -322,7 +318,7 @@ async def test_default_model_used(llm_client: LLMClient) -> None:
 @pytest.mark.asyncio
 async def test_multiple_models_supported(llm_client: LLMClient) -> None:
     """Test that multiple models can be specified.
-    
+
     Verifies:
         - Different models accepted
         - No validation errors

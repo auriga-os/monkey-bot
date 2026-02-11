@@ -47,6 +47,34 @@
 ### Q: Timeline constraints or dependencies?
 **A:** No timeline pressure. Plan this as one complete feature, thinking about major components and how everything works together for success.
 
+---
+
+## Phase 3: Code Spec - Story 4 (Integration & Deployment)
+**Date:** 2026-02-11T23:45:00Z
+
+### Q: What is your GCP project ID for Vertex AI?
+**A:** Make all GCP configuration (project ID, region, bucket name) editable in .env file - user will fill it in themselves
+
+### Q: What region should we use for Vertex AI and Cloud Run?
+**A:** Make deployment configuration (region, min-instances, max-instances) editable in .env file
+
+### Q: Should I add missing LangChain and Vertex AI dependencies to requirements.txt?
+**A:** Test it! If you need it add it, if you don't need it, don't add it! (Add langgraph, langchain-google-vertexai, google-cloud-aiplatform, aiofiles as needed)
+
+### Q: Should integration tests use real Vertex AI calls or mocks?
+**A:** Most tests should use mocks (fast, free), but have at least 1 working integration test that uses real Vertex AI API calls
+
+### Q: Should I create the code spec or implement Story 4?
+**A:** Just create the spec for now - will review and provide feedback before implementation
+
+**Code Spec Created:**
+- File: `.monkeymode/core-agent-foundation/code_specs/story-4-spec.md`
+- Tasks: 7 tasks (dependencies, config, main.py, Dockerfile, deployment, e2e tests, docs)
+- Testing: Unit tests with mocked Vertex AI + 1 integration test with real API
+- Configuration: All values in .env (user edits themselves)
+
+---
+
 ### Q: Testing strategy and frameworks?
 **A:** 
 - Use pytest

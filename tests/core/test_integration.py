@@ -12,8 +12,7 @@ import pytest
 from src.core import create_agent_with_mocks
 from src.core.agent import AgentCore
 from src.core.llm_client import LLMClient
-from src.core.mocks import MockMemoryManager, MockSkillsEngine, MockVertexAI
-
+from src.core.mocks import MockMemoryManager, MockSkillsEngine
 
 # ============================================================================
 # Tests: End-to-End Message Processing
@@ -23,7 +22,7 @@ from src.core.mocks import MockMemoryManager, MockSkillsEngine, MockVertexAI
 @pytest.mark.asyncio
 async def test_end_to_end_single_message() -> None:
     """Test complete flow from message to response.
-    
+
     Verifies:
         - All components wired correctly
         - Message processed successfully
@@ -53,7 +52,7 @@ async def test_end_to_end_single_message() -> None:
 @pytest.mark.asyncio
 async def test_end_to_end_multi_turn_conversation() -> None:
     """Test multi-turn conversation flow.
-    
+
     Verifies:
         - Multiple messages processed in sequence
         - Context maintained across turns
@@ -64,15 +63,11 @@ async def test_end_to_end_multi_turn_conversation() -> None:
     user_id = "test_user"
 
     # Act - Turn 1
-    response1 = await agent.process_message(
-        user_id, "Remember that I prefer Python", "trace_1"
-    )
-    
+    response1 = await agent.process_message(user_id, "Remember that I prefer Python", "trace_1")
+
     # Act - Turn 2
-    response2 = await agent.process_message(
-        user_id, "What's my preferred language?", "trace_2"
-    )
-    
+    response2 = await agent.process_message(user_id, "What's my preferred language?", "trace_2")
+
     # Act - Turn 3
     response3 = await agent.process_message(user_id, "List files", "trace_3")
 
@@ -83,7 +78,7 @@ async def test_end_to_end_multi_turn_conversation() -> None:
     # Verify conversation history
     history = await agent.memory.read_conversation_history(user_id, limit=10)
     assert len(history) == 6  # 3 turns * 2 messages (user + assistant)
-    
+
     # Verify messages in correct order
     assert history[0].content == "Remember that I prefer Python"
     assert history[2].content == "What's my preferred language?"
@@ -98,7 +93,7 @@ async def test_end_to_end_multi_turn_conversation() -> None:
 @pytest.mark.asyncio
 async def test_conversation_persists_across_calls() -> None:
     """Test that conversation history persists across multiple calls.
-    
+
     Verifies:
         - First call saves to memory
         - Second call loads history
@@ -110,7 +105,7 @@ async def test_conversation_persists_across_calls() -> None:
 
     # Act - First message
     await agent.process_message(user_id, "First message", "trace_1")
-    
+
     # Act - Second message (should load first message as context)
     await agent.process_message(user_id, "Second message", "trace_2")
 
@@ -124,7 +119,7 @@ async def test_conversation_persists_across_calls() -> None:
 @pytest.mark.asyncio
 async def test_memory_isolated_by_user() -> None:
     """Test that memory is isolated per user.
-    
+
     Verifies:
         - Different users have separate histories
         - No cross-contamination
@@ -137,7 +132,7 @@ async def test_memory_isolated_by_user() -> None:
     # Act - User 1 messages
     await agent.process_message(user1, "Alice message 1", "trace_1")
     await agent.process_message(user1, "Alice message 2", "trace_2")
-    
+
     # Act - User 2 messages
     await agent.process_message(user2, "Bob message 1", "trace_3")
 
@@ -145,7 +140,7 @@ async def test_memory_isolated_by_user() -> None:
     history1 = await agent.memory.read_conversation_history(user1, limit=10)
     assert len(history1) == 4  # 2 turns * 2 messages
     assert all("Alice" in msg.content for msg in history1 if msg.role == "user")
-    
+
     # Assert - User 2 history
     history2 = await agent.memory.read_conversation_history(user2, limit=10)
     assert len(history2) == 2  # 1 turn * 2 messages
@@ -160,7 +155,7 @@ async def test_memory_isolated_by_user() -> None:
 @pytest.mark.asyncio
 async def test_llm_receives_conversation_context() -> None:
     """Test that LLM receives previous conversation context.
-    
+
     Verifies:
         - History loaded from memory
         - Passed to LLM
@@ -173,7 +168,7 @@ async def test_llm_receives_conversation_context() -> None:
     # Build conversation
     await agent.process_message(user_id, "My name is Alice", "trace_1")
     await agent.process_message(user_id, "I like Python", "trace_2")
-    
+
     # Act - Ask about previous info
     response = await agent.process_message(user_id, "What do you know about me?", "trace_3")
 
@@ -186,7 +181,7 @@ async def test_llm_receives_conversation_context() -> None:
 @pytest.mark.asyncio
 async def test_all_components_log_consistently() -> None:
     """Test that all components log with trace_id.
-    
+
     Verifies:
         - Logging works across all components
         - Trace ID propagated
@@ -214,13 +209,14 @@ async def test_all_components_log_consistently() -> None:
 @pytest.mark.asyncio
 async def test_error_propagates_correctly() -> None:
     """Test that errors propagate through the stack.
-    
+
     Verifies:
         - Errors from lower layers caught
         - Wrapped in AgentError
         - Stack trace preserved
     """
     from unittest.mock import patch
+
     from src.core.interfaces import AgentError
 
     # Arrange
@@ -245,7 +241,7 @@ async def test_error_propagates_correctly() -> None:
 @pytest.mark.asyncio
 async def test_factory_creates_working_agent() -> None:
     """Test that factory function creates fully functional agent.
-    
+
     Verifies:
         - Factory returns working agent
         - All dependencies wired
@@ -259,7 +255,7 @@ async def test_factory_creates_working_agent() -> None:
     assert isinstance(agent.llm, LLMClient)
     assert isinstance(agent.skills, MockSkillsEngine)
     assert isinstance(agent.memory, MockMemoryManager)
-    
+
     # Assert - Agent works
     response = await agent.process_message("test_user", "Hello", "test_trace")
     assert isinstance(response, str)
@@ -274,7 +270,7 @@ async def test_factory_creates_working_agent() -> None:
 @pytest.mark.asyncio
 async def test_handles_many_messages() -> None:
     """Test agent handles many messages without degradation.
-    
+
     Verifies:
         - Memory doesn't grow unbounded
         - Performance stable
@@ -291,7 +287,7 @@ async def test_handles_many_messages() -> None:
     # Assert - Memory constrained by context limit
     history = await agent.memory.read_conversation_history(user_id, limit=10)
     assert len(history) == 10  # Only last 10 returned
-    
+
     # Verify all messages stored (not lost)
     full_history = await agent.memory.read_conversation_history(user_id, limit=1000)
     assert len(full_history) == 100  # 50 messages * 2 (user + assistant)
@@ -300,11 +296,11 @@ async def test_handles_many_messages() -> None:
 @pytest.mark.asyncio
 async def test_handles_concurrent_users() -> None:
     """Test agent handles multiple users concurrently (conceptual).
-    
+
     Verifies:
         - User isolation maintained
         - No cross-talk between users
-    
+
     Note: This is a single-threaded test, but verifies isolation logic.
     """
     # Arrange

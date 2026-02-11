@@ -8,7 +8,7 @@ This test suite verifies the core agent logic including:
 - Error handling
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -16,7 +16,6 @@ from src.core.agent import CONVERSATION_CONTEXT_LIMIT, AgentCore, create_agent_w
 from src.core.interfaces import AgentError, Message
 from src.core.llm_client import LLMClient
 from src.core.mocks import MockMemoryManager, MockSkillsEngine, MockVertexAI
-
 
 # ============================================================================
 # Fixtures
@@ -60,7 +59,7 @@ def agent_core(
 @pytest.mark.asyncio
 async def test_process_message_empty_history(agent_core: AgentCore) -> None:
     """Test processing message with no conversation history.
-    
+
     Verifies:
         - Agent can process first message from new user
         - Response is returned
@@ -85,7 +84,7 @@ async def test_process_message_with_history(
     agent_core: AgentCore, mock_memory_manager: MockMemoryManager
 ) -> None:
     """Test processing message with existing conversation history.
-    
+
     Verifies:
         - Agent loads previous messages
         - Context is sent to LLM
@@ -95,17 +94,13 @@ async def test_process_message_with_history(
     user_id = "user_123"
 
     # Pre-populate history with 2 messages
-    await mock_memory_manager.write_conversation(
-        user_id, "user", "Previous message", "trace_1"
-    )
+    await mock_memory_manager.write_conversation(user_id, "user", "Previous message", "trace_1")
     await mock_memory_manager.write_conversation(
         user_id, "assistant", "Previous response", "trace_1"
     )
 
     # Act
-    response = await agent_core.process_message(
-        user_id, "What did I say before?", "trace_2"
-    )
+    response = await agent_core.process_message(user_id, "What did I say before?", "trace_2")
 
     # Assert
     assert isinstance(response, str)
@@ -130,7 +125,7 @@ async def test_process_message_saves_conversation(
     agent_core: AgentCore, mock_memory_manager: MockMemoryManager
 ) -> None:
     """Test that message processing saves both user and assistant messages.
-    
+
     Verifies:
         - User message saved to memory
         - Assistant response saved to memory
@@ -168,7 +163,7 @@ async def test_process_message_saves_conversation(
 @pytest.mark.asyncio
 async def test_process_message_llm_failure_raises_error(agent_core: AgentCore) -> None:
     """Test that LLM failure raises AgentError.
-    
+
     Verifies:
         - LLM errors are caught
         - Wrapped in AgentError
@@ -194,7 +189,7 @@ async def test_process_message_memory_failure_raises_error(
     agent_core: AgentCore,
 ) -> None:
     """Test that memory errors are handled gracefully.
-    
+
     Verifies:
         - Memory errors are caught
         - Wrapped in AgentError
@@ -229,7 +224,7 @@ async def test_build_llm_messages_formats_correctly(
     agent_core: AgentCore, mock_memory_manager: MockMemoryManager
 ) -> None:
     """Test that _build_llm_messages formats messages correctly.
-    
+
     Verifies:
         - History messages converted to dict format
         - New message appended
@@ -239,9 +234,7 @@ async def test_build_llm_messages_formats_correctly(
     # Arrange
     user_id = "user_123"
     await mock_memory_manager.write_conversation(user_id, "user", "Message 1", "trace_1")
-    await mock_memory_manager.write_conversation(
-        user_id, "assistant", "Response 1", "trace_1"
-    )
+    await mock_memory_manager.write_conversation(user_id, "assistant", "Response 1", "trace_1")
 
     history = await mock_memory_manager.read_conversation_history(user_id, limit=10)
     new_content = "Message 2"
@@ -259,7 +252,7 @@ async def test_build_llm_messages_formats_correctly(
 @pytest.mark.asyncio
 async def test_build_llm_messages_with_empty_history(agent_core: AgentCore) -> None:
     """Test message building with no history.
-    
+
     Verifies:
         - Works with empty history
         - Only new message in output
@@ -286,7 +279,7 @@ async def test_conversation_context_limit(
     agent_core: AgentCore, mock_memory_manager: MockMemoryManager
 ) -> None:
     """Test that conversation context is limited to CONVERSATION_CONTEXT_LIMIT.
-    
+
     Verifies:
         - Only last N messages loaded from memory
         - Older messages not sent to LLM
@@ -297,9 +290,7 @@ async def test_conversation_context_limit(
 
     # Add 15 messages (exceeds limit of 10)
     for i in range(15):
-        await mock_memory_manager.write_conversation(
-            user_id, "user", f"Message {i}", f"trace_{i}"
-        )
+        await mock_memory_manager.write_conversation(user_id, "user", f"Message {i}", f"trace_{i}")
         await mock_memory_manager.write_conversation(
             user_id, "assistant", f"Response {i}", f"trace_{i}"
         )
@@ -330,7 +321,7 @@ async def test_conversation_context_limit(
 @pytest.mark.asyncio
 async def test_create_agent_with_mocks() -> None:
     """Test factory function creates agent with mocks.
-    
+
     Verifies:
         - Factory returns AgentCore instance
         - All dependencies are wired correctly
@@ -359,7 +350,7 @@ async def test_create_agent_with_mocks() -> None:
 @pytest.mark.asyncio
 async def test_process_message_with_empty_content(agent_core: AgentCore) -> None:
     """Test processing empty message.
-    
+
     Verifies:
         - Agent handles empty messages gracefully
         - No crashes or errors
@@ -380,7 +371,7 @@ async def test_process_message_with_empty_content(agent_core: AgentCore) -> None
 @pytest.mark.asyncio
 async def test_process_message_with_long_content(agent_core: AgentCore) -> None:
     """Test processing very long message.
-    
+
     Verifies:
         - Agent handles long messages
         - No truncation or errors
@@ -401,7 +392,7 @@ async def test_process_message_with_long_content(agent_core: AgentCore) -> None:
 @pytest.mark.asyncio
 async def test_process_message_with_special_characters(agent_core: AgentCore) -> None:
     """Test processing message with special characters.
-    
+
     Verifies:
         - Agent handles Unicode, emojis, special chars
         - No encoding errors

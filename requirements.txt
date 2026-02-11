@@ -2,8 +2,20 @@
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
 pyyaml>=6.0
-google-cloud-storage>=2.10.0
 pydantic>=2.0.0
+python-dotenv>=1.0.0
+
+# LangChain + LangGraph (agent orchestration)
+langgraph>=0.2.0
+langchain-core>=0.3.0
+langchain-google-vertexai>=2.0.0
+
+# Google Cloud (Vertex AI + Storage)
+google-cloud-aiplatform>=1.65.0
+google-cloud-storage>=2.10.0
+
+# Async support
+aiofiles>=24.0.0
 
 # Testing dependencies
 pytest>=7.4.0

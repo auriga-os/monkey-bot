@@ -1,6 +1,6 @@
 {
   "feature_name": "core-agent-foundation",
-  "current_phase": "3",
+  "current_phase": "4",
   "phase_status": {
     "branch_setup": "completed",
     "design_1a": "completed",
@@ -8,7 +8,7 @@
     "design_1c": "completed",
     "user_stories": "completed",
     "code_spec": "completed",
-    "implementation": "not_started"
+    "implementation": "completed"
   },
   "artifacts": {
     "design_docs": {
@@ -18,8 +18,10 @@
     },
     "user_stories_doc": ".monkeymode/core-agent-foundation/user_stories.md",
     "code_specs": [
+      ".monkeymode/core-agent-foundation/code_specs/story-1-spec.md",
       ".monkeymode/core-agent-foundation/code_specs/story-2-spec.md",
-      ".monkeymode/core-agent-foundation/code_specs/story-3-spec.md"
+      ".monkeymode/core-agent-foundation/code_specs/story-3-spec.md",
+      ".monkeymode/core-agent-foundation/code_specs/story-4-spec.md"
     ],
     "qa_log": ".monkeymode/core-agent-foundation/qa-log.md"
   },
@@ -31,8 +33,43 @@
     "branch_setup_completed": true,
     "open_source_project": true,
     "team_size": 3,
-    "selected_story": 3,
+    "selected_story": 4,
     "timeline": "no timeline concerns"
   },
-  "last_updated": "2026-02-11T22:45:00Z"
+  "implementation_notes": {
+    "story_1": {
+      "status": "completed",
+      "files_created": 11,
+      "tests_passing": 53,
+      "test_coverage": "92%",
+      "type_checking": "passing (mypy strict)",
+      "completed_at": "2026-02-11T23:30:00Z"
+    },
+    "story_2": {
+      "status": "completed",
+      "files_created": 2,
+      "files_modified": 2,
+      "tests_passing": 22,
+      "test_coverage": "agent + llm_client fully tested",
+      "completed_at": "2026-02-11T23:45:00Z"
+    },
+    "story_3": {
+      "status": "completed",
+      "files_created": 5,
+      "files_modified": 1,
+      "tests_passing": 44,
+      "test_coverage": "skills + terminal + memory tested",
+      "completed_at": "2026-02-11T23:50:00Z"
+    },
+    "story_4": {
+      "status": "completed",
+      "files_created": 5,
+      "files_modified": 4,
+      "tests_passing": 147,
+      "test_coverage": "all tests passing",
+      "deployment": "Cloud Run ready",
+      "completed_at": "2026-02-11T20:15:00Z"
+    }
+  },
+  "last_updated": "2026-02-12T00:00:00Z"
 }
