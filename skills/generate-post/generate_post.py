@@ -19,7 +19,10 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
 # Import platform limits
-from platforms import VALID_PLATFORMS, get_platform_limit
+try:
+    from platform_config import VALID_PLATFORMS, get_platform_limit
+except ImportError:
+    from .platform_config import VALID_PLATFORMS, get_platform_limit
 
 # Paths
 BRAND_VOICE_PATH = Path("./data/memory/BRAND_VOICE.md")

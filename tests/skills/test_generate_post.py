@@ -14,7 +14,7 @@ from generate_post import (
     PostContent,
     ValidationResult,
 )
-from platforms import VALID_PLATFORMS, get_platform_limit
+from platform_config import VALID_PLATFORMS, get_platform_limit
 
 
 class TestPlatformLimits:
