@@ -4,6 +4,8 @@ This module implements the core agent logic, coordinating between the LLM,
 skills engine, and memory manager to process user messages.
 """
 
+import asyncio
+import contextlib
 import logging
 
 from .interfaces import (
@@ -14,6 +16,7 @@ from .interfaces import (
     SkillsEngineInterface,
 )
 from .llm_client import LLMClient
+from .scheduler import CronScheduler
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +70,7 @@ class AgentCore(AgentCoreInterface):
         llm_client: LLMClient,
         skills_engine: SkillsEngineInterface,
         memory_manager: MemoryManagerInterface,
+        scheduler_check_interval: int = 10,
     ) -> None:
         """Initialize Agent Core.
 
@@ -77,10 +81,19 @@ class AgentCore(AgentCoreInterface):
             llm_client: LLM client wrapper for Vertex AI
             skills_engine: Skills execution engine (MockSkillsEngine for Sprint 1)
             memory_manager: Memory manager (MockMemoryManager for Sprint 1)
+            scheduler_check_interval: Seconds between scheduler checks (default 10)
         """
         self.llm = llm_client
         self.skills = skills_engine
         self.memory = memory_manager
+
+        # Initialize scheduler for background jobs (Sprint 3)
+        # Note: Scheduler must be explicitly started with start_scheduler()
+        self.scheduler = CronScheduler(
+            agent_state=memory_manager,  # Pass memory manager as agent state
+            check_interval_seconds=scheduler_check_interval
+        )
+        self._scheduler_task = None
 
     async def process_message(self, user_id: str, content: str, trace_id: str) -> str:
         """Process user message and return response.
@@ -220,6 +233,39 @@ class AgentCore(AgentCoreInterface):
         messages.append({"role": "user", "content": new_content})
 
         return messages
+
+    async def start_scheduler(self):
+        """Start the background scheduler for scheduled posts.
+
+        The scheduler runs in a background task and processes jobs
+        at their scheduled times. Call stop_scheduler() to terminate.
+
+        Example:
+            >>> agent = AgentCore(llm, skills, memory)
+            >>> await agent.start_scheduler()
+            >>> # ... agent processes messages ...
+            >>> await agent.stop_scheduler()
+        """
+        if self._scheduler_task is None:
+            self._scheduler_task = asyncio.create_task(self.scheduler.start())
+            logger.info("Scheduler started")
+        else:
+            logger.warning("Scheduler already running")
+
+    async def stop_scheduler(self):
+        """Stop the background scheduler.
+
+        Terminates the scheduler background task and waits for
+        it to complete cleanup.
+        """
+        if self._scheduler_task is not None:
+            await self.scheduler.stop()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._scheduler_task
+            self._scheduler_task = None
+            logger.info("Scheduler stopped")
+        else:
+            logger.warning("Scheduler not running")
 
 
 # ============================================================================
