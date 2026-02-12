@@ -1,31 +1,49 @@
-# Dockerfile for Auriga Marketing Bot
-FROM python:3.11-slim
+# =============================================================================
+# Stage 1: Build stage (install dependencies)
+# =============================================================================
+FROM python:3.11-slim AS builder
 
-# Set working directory
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    git \
+# Install system dependencies for building Python packages
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first (for layer caching)
+# Copy requirements and install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --user -r requirements.txt
+
+# =============================================================================
+# Stage 2: Runtime stage (minimal image)
+# =============================================================================
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Copy installed packages from builder stage
+COPY --from=builder /root/.local /root/.local
+
+# Add Python user site-packages to PATH
+ENV PATH=/root/.local/bin:$PATH
 
 # Copy application code
-COPY . .
+COPY src/ src/
+COPY skills/ skills/
 
-# Create data directory
+# Create memory directory (will be overridden by volume in Cloud Run)
 RUN mkdir -p /app/data/memory
 
-# Set environment variables
-ENV PYTHONUNBUFFERED=1
-ENV PORT=8080
+# Set environment variables for Cloud Run
+ENV PYTHONUNBUFFERED=1 \
+    PORT=8080
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"
+# Health check (Cloud Run uses this for readiness/liveness)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health').read()"
+
+# Expose port (Cloud Run injects PORT env var)
+EXPOSE 8080
 
 # Run application
 CMD ["python", "-m", "src.main"]

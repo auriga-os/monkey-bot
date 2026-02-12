@@ -47,6 +47,7 @@ class CronScheduler:
         self.check_interval = check_interval_seconds
         self.jobs: list[dict[str, Any]] = []
         self.running = False
+        self._job_handlers: dict[str, Any] = {}
         self._load_jobs()
 
     async def schedule_job(
@@ -127,6 +128,24 @@ class CronScheduler:
         self.running = False
         logger.info("Cron scheduler stopped")
 
+    def register_handler(self, job_type: str, handler: Any):
+        """Register a job handler for a specific job type.
+
+        This allows external code to register custom handlers for different
+        job types, making the scheduler extensible and framework-agnostic.
+
+        Args:
+            job_type: Type of job (e.g., "post_content", "collect_metrics")
+            handler: Async callable that takes a job dict as argument
+
+        Example:
+            >>> async def my_handler(job):
+            ...     print(f"Executing job: {job['id']}")
+            >>> scheduler.register_handler("my_job_type", my_handler)
+        """
+        self._job_handlers[job_type] = handler
+        logger.info(f"Registered handler for job type: {job_type}")
+
     async def _check_and_execute_jobs(self):
         """Check for due jobs and execute them."""
         now = datetime.utcnow()
@@ -141,7 +160,7 @@ class CronScheduler:
                 await self._execute_job(job)
 
     async def _execute_job(self, job: dict[str, Any]):
-        """Execute a single job.
+        """Execute a single job using registered handlers.
 
         Args:
             job: Job dict with id, job_type, payload, etc.
@@ -156,15 +175,20 @@ class CronScheduler:
             job["started_at"] = datetime.utcnow().isoformat()
             self._save_jobs()
 
-            # Execute based on job type
-            if job_type == "post_content":
-                await self._execute_post_content(job)
-            elif job_type == "collect_metrics":
-                await self._execute_collect_metrics(job)
-            elif job_type == "send_weekly_report":
-                await self._execute_send_weekly_report(job)
-            else:
-                raise ValueError(f"Unknown job type: {job_type}")
+            # Look up handler from registry
+            handler = self._job_handlers.get(job_type)
+            if not handler:
+                raise ValueError(f"No handler registered for job type: {job_type}")
+
+            # Inject agent state into job context for handlers to use
+            job["_agent_state"] = self.agent_state
+
+            try:
+                # Execute the handler
+                await handler(job)
+            finally:
+                # Always clean up agent state from job dict (even on error)
+                job.pop("_agent_state", None)
 
             # Mark as completed
             job["status"] = "completed"
@@ -187,97 +211,9 @@ class CronScheduler:
                 logger.info(f"Job {job_id} will retry at {retry_at}")
 
         finally:
+            # Ensure agent state is cleaned up before saving
+            job.pop("_agent_state", None)
             self._save_jobs()
-
-    async def _execute_post_content(self, job: dict[str, Any]):
-        """Execute post_content job.
-
-        Job payload includes:
-            - campaign_id
-            - post_number
-            - platform
-            - idea (post idea from campaign)
-            - topic
-
-        Args:
-            job: Job dict with payload
-        """
-        payload = job["payload"]
-
-        # Import skills dynamically to avoid circular imports
-        from skills.generate_post import generate_post
-        from skills.request_approval import request_approval
-
-        # Step 1: Generate post content
-        generated = await generate_post(
-            self.agent_state,
-            topic=payload["topic"],
-            platform=payload["platform"],
-            additional_context=payload["idea"]
-        )
-
-        if not generated.success:
-            raise Exception(f"Post generation failed: {generated.error}")
-
-        # Step 2: Request approval (creates approval request)
-        approval_requested = await request_approval(
-            self.agent_state,
-            post_data=generated.data["post"]
-        )
-
-        if not approval_requested.success:
-            raise Exception(f"Approval request failed: {approval_requested.error}")
-
-        # Note: Actual posting happens when user approves via Google Chat
-        # This job just generates content and requests approval
-
-        logger.info(
-            "Scheduled post generated and sent for approval",
-            extra={
-                "campaign_id": payload["campaign_id"],
-                "post_number": payload["post_number"],
-                "platform": payload["platform"]
-            }
-        )
-
-    async def _execute_collect_metrics(self, job: dict[str, Any]):
-        """Execute metrics collection job.
-
-        Collects engagement metrics from all social platforms
-        and saves to data/metrics directory.
-
-        Args:
-            job: Job dict with payload
-        """
-        from scripts.collect_metrics import MetricsCollector
-
-        collector = MetricsCollector(self.agent_state.memory_dir)
-        await collector.collect_all()
-
-        logger.info("Metrics collection completed")
-
-    async def _execute_send_weekly_report(self, job: dict[str, Any]):
-        """Execute weekly report job.
-
-        Generates and sends weekly engagement report to Google Chat.
-
-        Args:
-            job: Job dict with payload
-        """
-        import os
-        from scripts.generate_report import WeeklyReportGenerator
-
-        webhook_url = os.getenv("GOOGLE_CHAT_WEBHOOK")
-        if not webhook_url:
-            raise Exception("GOOGLE_CHAT_WEBHOOK not set")
-
-        generator = WeeklyReportGenerator(
-            self.agent_state.memory_dir,
-            webhook_url
-        )
-        await generator.generate_and_send()
-
-        logger.info("Weekly report sent")
 
     def _load_jobs(self):
         """Load jobs from disk (persistence)."""

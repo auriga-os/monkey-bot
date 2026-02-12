@@ -118,17 +118,14 @@ class TestCronScheduler:
     @pytest.mark.asyncio
     async def test_execute_due_job(self, scheduler, monkeypatch):
         """Test: Scheduler executes jobs when time arrives."""
-        # Mock the post_content execution
+        # Mock the post_content handler
         execute_called = []
         
-        async def mock_execute_post_content(job):
+        async def mock_handler(job):
             execute_called.append(job["payload"])
         
-        monkeypatch.setattr(
-            scheduler,
-            "_execute_post_content",
-            mock_execute_post_content
-        )
+        # Register the handler
+        scheduler.register_handler("post_content", mock_handler)
         
         # Schedule job for 1 second from now
         schedule_at = datetime.utcnow() + timedelta(seconds=1)
@@ -173,7 +170,7 @@ class TestCronScheduler:
         async def mock_execute_that_fails(job_dict):
             raise Exception("Test failure")
         
-        scheduler._execute_post_content = mock_execute_that_fails
+        scheduler.register_handler("post_content", mock_execute_that_fails)
         
         # Execute job
         await scheduler._execute_job(job)
@@ -202,7 +199,7 @@ class TestCronScheduler:
         async def mock_execute_that_fails(job_dict):
             raise Exception("Test failure")
         
-        scheduler._execute_post_content = mock_execute_that_fails
+        scheduler.register_handler("post_content", mock_execute_that_fails)
         
         # Execute twice
         await scheduler._execute_job(job)
@@ -267,9 +264,9 @@ class TestCronScheduler:
         job = scheduler.get_job(job_id)
         job["max_attempts"] = 1  # Fail immediately
         
-        # Execute job - should fail
+        # Execute job - should fail (no handler registered)
         await scheduler._execute_job(job)
         
         # Verify job marked as failed
         assert job["status"] == "failed"
-        assert "Unknown job type" in job["error"]
+        assert "No handler registered for job type" in job["error"]

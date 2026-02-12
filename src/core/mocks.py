@@ -91,6 +91,10 @@ class MockMemoryManager(MemoryManagerInterface):
         self.conversation_histories: dict[str, list[Message]] = {}
         # Store facts per user: {user_id: {key: value}}
         self.user_facts: dict[str, dict[str, str]] = {}
+        # Mock memory directory (used by CronScheduler)
+        from pathlib import Path
+        import tempfile
+        self.memory_dir = Path(tempfile.mkdtemp())
 
     async def read_conversation_history(self, user_id: str, limit: int = 10) -> list[Message]:
         """Return last N messages from in-memory history for specific user.
