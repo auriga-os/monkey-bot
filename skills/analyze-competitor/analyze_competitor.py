@@ -11,7 +11,7 @@ import logging
 import sys
 from dataclasses import asdict, dataclass
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -75,7 +75,7 @@ def analyze_competitor(
     # Validate URL
     if not competitor_url or not competitor_url.strip():
         raise ValueError("Competitor URL cannot be empty")
-    
+
     if not competitor_url.startswith(("http://", "https://")):
         raise ValueError(
             "Competitor URL must start with http:// or https://"
@@ -106,26 +106,26 @@ def analyze_competitor(
 
     # Step 2: Analyze content using LLM
     from llm_client import LLMClient
-    
+
     llm = LLMClient()
     prompt = f'''
     Analyze this competitor's content strategy:
-    
+
     Content: {scraped_data['content'][:5000]}
-    
+
     Provide:
     1. Main topics discussed (list)
     2. Content tone/style (string)
     3. Posting frequency estimate (string)
     4. Unique angles or approaches (list)
     5. Opportunities for differentiation (list)
-    
+
     Return as JSON.
     '''
-    
+
     analysis_json = llm.generate(prompt)
     analysis_data = json.loads(analysis_json)
-    
+
     analysis = CompetitorAnalysis(
         main_topics=analysis_data["main_topics"],
         content_style=analysis_data["content_style"],
@@ -209,22 +209,22 @@ def main():
         else:
             print(f"\n🔍 Competitor Analysis: {response.url}")
             print(f"Scraped at: {response.scraped_at}\n")
-            
+
             print("📌 Main Topics:")
             for topic in response.analysis.main_topics:
                 print(f"  • {topic}")
-            
-            print(f"\n✍️  Content Style:")
+
+            print("\n✍️  Content Style:")
             print(f"  {response.analysis.content_style}")
-            
-            print(f"\n📅 Posting Frequency:")
+
+            print("\n📅 Posting Frequency:")
             print(f"  {response.analysis.posting_frequency}")
-            
-            print(f"\n🎯 Unique Angles:")
+
+            print("\n🎯 Unique Angles:")
             for angle in response.analysis.unique_angles:
                 print(f"  • {angle}")
-            
-            print(f"\n💡 Opportunities:")
+
+            print("\n💡 Opportunities:")
             for opp in response.analysis.opportunities:
                 print(f"  • {opp}")
             print()

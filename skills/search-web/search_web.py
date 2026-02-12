@@ -139,7 +139,10 @@ def search_web(
     mock_results = [
         SearchResult(
             title=f"Article {i+1}: {query}",
-            snippet=f"This article discusses {query} in detail, covering recent developments and trends.",
+            snippet=(
+                f"This article discusses {query} in detail, "
+                "covering recent developments and trends."
+            ),
             url=f"https://example.com/article-{i+1}",
             published_date="2026-02-10" if recency else None
         )
@@ -190,7 +193,7 @@ def main():
         else:
             print(f"\n🔍 Search Results for: {response.query}")
             print(f"Found {response.count} results\n")
-            
+
             for i, result in enumerate(response.results, 1):
                 print(f"{i}. {result.title}")
                 print(f"   {result.snippet}")

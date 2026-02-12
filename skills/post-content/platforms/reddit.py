@@ -140,10 +140,10 @@ def post_to_reddit(
     # Reddit post IDs have format t3_xxxxx
     import hashlib
     mock_post_id = f"t3_{hashlib.md5(title.encode()).hexdigest()[:10]}"
-    
+
     # Create slug from title (Reddit URL format)
     title_slug = title.lower().replace(" ", "_")[:50]
-    
+
     return {
         "post_id": mock_post_id,
         "post_url": f"https://reddit.com/r/{subreddit}/comments/{mock_post_id[3:]}/{title_slug}/",

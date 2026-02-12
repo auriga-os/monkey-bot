@@ -1,31 +1,164 @@
-# Phase 2: Marketing Campaign Manager (Full Workflow + MCP)
+# Phase 2: Marketing Campaign Manager (Framework Enhancements)
 
-**Goal:** World-class social media campaign automation with research, planning, content generation, and posting
+**Goal:** Add framework capabilities to support domain-specific marketing agents
 
-**Value Delivered:** Complete marketing workflow from topic research to scheduled multi-platform posting. Demonstrates framework's power for domain-specific agents.
+**Value Delivered:** Generic, reusable framework components that enable marketing automation (and other domain-specific agents). Demonstrates framework's extensibility through a vertical slice approach.
 
 **Prerequisites:** Phase 1 must be complete (core agent foundation working)
 
-**Status:** Ready for monkeymode execution after Phase 1
+**Status:** In Design (MonkeyMode Phase 1A Complete)
+
+**Updated:** 2026-02-11 - Revised based on Cursor skills blog best practices
 
 ---
 
 ## Strategic Context
 
-This phase transforms the general assistant into a specialized marketing agent capable of:
-1. **Research**: Web search + competitor analysis using MCP servers
-2. **Planning**: Strategy development + content calendar creation
-3. **Generation**: Brand voice-aware content creation
-4. **Posting**: Multi-platform posting (X/Twitter, LinkedIn, Instagram)
-5. **Scheduling**: Cron-based campaign execution
+This phase enhances the monkey-bot framework (PUBLIC repo) with generic capabilities needed for domain-specific agents. Implementation focuses on:
 
-This demonstrates the framework's extensibility and validates the domain-specific agent pattern.
+1. **Vertical Slice First**: Build one end-to-end flow (generate → approve → post) before abstracting
+2. **Skills as LLM Contracts**: SKILL.md descriptions are triggering mechanisms, not documentation
+3. **Validate Routing**: Test that Gemini (via LangGraph) correctly routes using SKILL.md descriptions
+4. **Extract Abstractions**: Only after vertical slice works, extract generic framework components
+
+**Note:** Actual marketing skills and private implementation live in separate private repo (auriga-marketing-bot). This document covers only PUBLIC framework enhancements in monkey-bot.
 
 ---
 
-## Components to Build
+## Development Approach: Vertical Slice First
 
-### 1. MCP Integration Layer (CLI-Based)
+### Why Vertical Slice?
+
+Rather than building 5 framework abstractions upfront, we'll:
+1. **Build ONE working flow end-to-end** (in private repo): Generate post → Request approval → Post to X
+2. **Validate routing works**: Test that Gemini selects the right skills based on SKILL.md descriptions
+3. **Identify patterns**: See what's actually needed vs. speculative abstractions
+4. **Extract to framework**: Move generic parts to public monkey-bot repo
+
+### Vertical Slice: Social Post Flow
+
+```
+User: "Create a post about AI agents for X"
+         │
+         ▼
+   [Agent Core Routes to generate_post skill]
+         │
+         ▼
+   generate_post.py
+   - Loads BRAND_VOICE.md (if exists)
+   - Calls Gemini to generate content
+   - Validates character limits
+   - Returns formatted post
+         │
+         ▼
+   [Agent Core Routes to request_approval skill]
+         │
+         ▼
+   request_approval.py
+   - Formats Google Chat card
+   - Sends to user
+   - Waits for approval (hardcoded timeout: 1 hour)
+   - Returns approval status
+         │
+         ▼ (if approved)
+   [Agent Core Routes to post_content skill]
+         │
+         ▼
+   post_content.py
+   - Takes platform="x" parameter
+   - Calls X API
+   - Returns post URL
+         │
+         ▼
+   Success! Post live at https://x.com/...
+```
+
+**Success Criteria for Vertical Slice:**
+- [ ] User can trigger flow via natural language
+- [ ] Gemini routes correctly to each skill based on SKILL.md
+- [ ] Approval workflow works end-to-end in Google Chat
+- [ ] Post successfully published to X
+- [ ] All code in PRIVATE repo initially (auriga-marketing-bot)
+
+### After Vertical Slice Works
+
+**Then and only then:**
+1. Identify what's generic (approval interface, platform posting pattern)
+2. Extract to public framework with proper abstractions
+3. Update private repo to use framework components
+4. Add other platforms (Instagram, TikTok, etc.)
+5. Add research and campaign planning skills
+
+---
+
+## Framework Enhancements (After Vertical Slice)
+
+These components will be added to monkey-bot PUBLIC repo ONLY after validating they're needed through the vertical slice.
+
+### 1. Skill Loader Enhancement (CRITICAL - Do This First)
+
+**Problem:** Current skill loader reads SKILL.md but doesn't expose descriptions to LLM routing.
+
+**Current State** (`src/skills/loader.py`):
+```python
+class SkillLoader:
+    def load_skills(self) -> Dict[str, dict]:
+        """Discover skills by parsing SKILL.md frontmatter."""
+        # Returns: {"skill-name": {"metadata": {...}, "entry_point": "..."}}
+```
+
+**Enhancement Needed:**
+```python
+class SkillLoader:
+    def load_skills(self) -> Dict[str, dict]:
+        """
+        Load skills and expose to LLM routing.
+        
+        Returns skill metadata that LangGraph can use for tool selection:
+        {
+            "skill-name": {
+                "metadata": {...},
+                "entry_point": "/path/to/skill.py",
+                "description": "Triggering description for LLM",  # NEW
+                "requires_env": ["API_KEY"],  # NEW
+                "available": True  # NEW - false if missing env vars
+            }
+        }
+        """
+    
+    def get_skill_descriptions_for_llm(self) -> str:
+        """
+        Format skill descriptions for LLM system prompt.
+        
+        Returns markdown list of available skills:
+        - generate_post: Create social media content for any platform...
+        - request_approval: Send content to Google Chat for user approval...
+        - post_content: Publish approved content to social media platforms...
+        """
+```
+
+**Integration with Agent Core:**
+
+Agent's system prompt should include skill descriptions from loader:
+```python
+system_prompt = f"""You are a helpful assistant with these skills:
+
+{skill_loader.get_skill_descriptions_for_llm()}
+
+When the user's request matches a skill description, invoke that skill.
+"""
+```
+
+**Testing Strategy:**
+1. Unit test: Verify loader parses SKILL.md correctly
+2. Integration test: Verify LangGraph tool selection uses descriptions
+3. Routing test: Give Gemini ambiguous requests, verify correct skill chosen
+
+**Priority:** DO THIS FIRST - Without proper routing, nothing else matters.
+
+---
+
+### 2. MCP Integration Layer (CLI-Based)
 
 #### Token Management System
 
@@ -120,6 +253,470 @@ def search_web(query: str, limit: int = 10) -> dict:
 ```
 
 ---
+
+### 3. Approval Workflow System (Extract After Vertical Slice)
+
+**When to Extract:** After `request_approval` skill works in private repo.
+
+**Purpose:** Generic approval pattern that works via Google Chat, email, CLI, etc.
+
+**Interface** (`src/core/approval.py`):
+```python
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+
+@dataclass
+class ApprovalRequest:
+    item_type: str  # "social_post", "campaign", etc.
+    item_data: dict
+    approver: str
+    timeout_seconds: int = 3600
+
+@dataclass
+class ApprovalResult:
+    approved: bool
+    feedback: str | None = None
+    modified_data: dict | None = None
+
+class ApprovalInterface(ABC):
+    @abstractmethod
+    async def request_approval(
+        self, 
+        request: ApprovalRequest
+    ) -> ApprovalResult:
+        """Request approval for an item."""
+
+class GoogleChatApproval(ApprovalInterface):
+    """Google Chat approval using interactive cards."""
+    
+    async def request_approval(
+        self, 
+        request: ApprovalRequest
+    ) -> ApprovalResult:
+        # Send card to Google Chat
+        # Wait for user interaction
+        # Return result
+```
+
+**Why Generic:** Any agent might need approval workflows (expense reports, code reviews, etc.)
+
+---
+
+### 4. Cron Scheduler (Extract After Scheduling Works)
+
+**When to Extract:** After manually scheduling a post works in private repo.
+
+**Purpose:** Schedule and execute jobs at specified times.
+
+**Interface** (`src/core/cron.py`):
+```python
+class CronScheduler:
+    """Job scheduler for timed execution."""
+    
+    def schedule_job(
+        self,
+        job_id: str,
+        schedule: dict,  # {"kind": "at", "at": "ISO8601"} or {"kind": "cron", "expr": "0 9 * * *"}
+        skill_name: str,
+        skill_params: dict
+    ) -> None:
+        """Schedule a job to run a skill."""
+        
+    def cancel_job(self, job_id: str) -> None:
+        """Cancel a scheduled job."""
+        
+    def list_jobs(self, status: str = None) -> List[dict]:
+        """List scheduled jobs."""
+```
+
+**Storage:** `./data/memory/cron_jobs.json`
+
+**Why Generic:** Any agent might need scheduled tasks (backups, reports, data syncs)
+
+---
+
+## Skill Design Guidelines (Private Repo)
+
+These guidelines apply to skills in auriga-marketing-bot (private repo).
+
+### Skill Granularity Rules
+
+**From Cursor Skills Blog:**
+1. **Single-purpose skills**: One clear job per skill
+2. **Platform as parameter**: Don't create 5 posting skills, create 1 with platform parameter
+3. **Split research capabilities**: Don't bundle web search + competitor analysis
+
+**Correct Granularity:**
+
+❌ **TOO COARSE:**
+```
+skills/research/  (bundles 3 different capabilities)
+├── SKILL.md
+└── research.py  (does search AND competitor AND trends)
+```
+
+✅ **CORRECT:**
+```
+skills/search-web/
+├── SKILL.md  (name: search-web, description: "Search the web...")
+└── search_web.py
+
+skills/analyze-competitor/
+├── SKILL.md  (name: analyze-competitor, description: "Analyze competitor...")
+└── analyze_competitor.py
+
+skills/identify-trends/
+├── SKILL.md  (name: identify-trends, description: "Identify content trends...")
+└── identify_trends.py
+```
+
+❌ **TOO FINE:**
+```
+skills/post-to-instagram/
+skills/post-to-tiktok/
+skills/post-to-x/
+skills/post-to-linkedin/
+skills/post-to-reddit/
+```
+
+✅ **CORRECT:**
+```
+skills/post-content/
+├── SKILL.md  (name: post-content, description: "Publish content to social platforms...")
+└── post_content.py  (takes platform parameter)
+```
+
+### SKILL.md Format (LLM Triggering Contract)
+
+**Critical:** The `name` and `description` in YAML frontmatter are what the LLM sees for routing.
+
+**Example: generate-post skill**
+
+```markdown
+---
+name: generate-post
+description: Create social media content for any platform (Instagram, TikTok, X, LinkedIn, Reddit). Automatically validates character limits and brand voice. Use when user wants to create, write, draft, or generate a post.
+metadata:
+  emonk:
+    requires:
+      env: []  # No API keys needed
+---
+
+# Generate Social Media Post
+
+Creates platform-specific social media content optimized for engagement.
+
+## When to Use This Skill
+
+The agent should invoke this skill when the user:
+- Wants to create a new social media post
+- Asks to "write a post about [topic]"
+- Requests "draft Instagram caption for [topic]"
+- Says "generate content for X about [topic]"
+
+## Parameters
+
+- `topic` (required): What the post is about
+- `platform` (required): Target platform ("instagram", "tiktok", "x", "linkedin", "reddit")
+- `tone` (optional): Desired tone ("professional", "casual", "humorous")
+- `include_hashtags` (optional): Whether to add hashtags (default: true)
+
+## Success Criteria
+
+A good post has:
+- ✅ Appropriate length for platform (see limits below)
+- ✅ Engaging hook in first line
+- ✅ Clear call-to-action
+- ✅ Platform-appropriate hashtags (if applicable)
+- ✅ No forbidden brand voice phrases (if BRAND_VOICE.md exists)
+
+## Platform Limits
+
+| Platform | Character Limit | Hashtag Recommendation |
+|----------|----------------|------------------------|
+| Instagram | 2200 | 3-5 hashtags |
+| TikTok | 2200 | 3-5 hashtags |
+| X | 280 | 1-2 hashtags |
+| LinkedIn | 3000 | 3-5 hashtags |
+| Reddit | 40000 | No hashtags (use flair) |
+
+## Output Format
+
+```json
+{
+  "success": true,
+  "post": {
+    "platform": "instagram",
+    "content": "Post text here...",
+    "hashtags": ["#AI", "#TechInnovation"],
+    "character_count": 285,
+    "validation": {
+      "within_limit": true,
+      "has_hook": true,
+      "has_cta": true,
+      "brand_voice_valid": true
+    }
+  }
+}
+```
+
+## Error Handling
+
+- If BRAND_VOICE.md exists but post violates it, return error with specifics
+- If platform is unknown, return error with valid platforms
+- If content generation fails, return error with reason
+
+## Testing
+
+Normal case: "Create an Instagram post about AI agents"
+Edge case: "Create a 5000 character post for X" (should fail validation)
+Out of scope: "Schedule this post for tomorrow" (use schedule-post skill instead)
+```
+
+### Menu Pattern for Large Skills
+
+**Use when:** Skill has multiple sub-operations or large code files.
+
+**Example: create-campaign skill**
+
+```markdown
+---
+name: create-campaign
+description: Plan a complete social media campaign including research, strategy, and content calendar. Use when user wants to create a multi-week campaign or plan content strategy.
+metadata:
+  emonk:
+    requires:
+      env: ["PERPLEXITY_API_KEY"]
+---
+
+# Create Marketing Campaign
+
+Plans a comprehensive social media campaign with research and content calendar.
+
+## Workflow
+
+This skill follows a multi-step process. Each step can be found in separate files:
+
+1. **Research Topic** → See `research_topic.md` for detailed instructions
+   - Web search for trending content
+   - Competitor analysis
+   - Content gap identification
+
+2. **Define Strategy** → See `define_strategy.md`
+   - Choose theme and content pillars
+   - Set posting cadence per platform
+   - Define success metrics
+
+3. **Generate Calendar** → See `generate_calendar.md`
+   - Create posting schedule
+   - Assign content pillars to dates
+   - Balance platforms
+
+4. **Create Post Ideas** → See `create_post_ideas.md`
+   - Generate specific post topics
+   - Assign to calendar dates
+
+## Usage
+
+If user wants a complete campaign, run all steps in order.
+If user wants just research or just strategy, run that step only.
+
+[Rest of skill details...]
+```
+
+This keeps the main SKILL.md lean while providing detailed instructions in referenced files.
+
+---
+
+## Testing Strategy
+
+### 1. Routing Tests (CRITICAL)
+
+**Test that Gemini correctly selects skills based on descriptions.**
+
+```python
+# tests/test_skill_routing.py
+
+def test_generate_post_routing():
+    """Verify LLM routes 'create a post' to generate-post skill."""
+    
+    user_message = "Create an Instagram post about AI agents"
+    
+    # Invoke agent
+    response = agent.process_message(user_id="test", content=user_message)
+    
+    # Verify generate-post skill was invoked
+    assert "generate-post" in response.skills_invoked
+    assert response.success
+
+def test_approval_routing():
+    """Verify LLM routes approval requests correctly."""
+    
+    user_message = "Send this post for approval"
+    
+    response = agent.process_message(user_id="test", content=user_message)
+    
+    assert "request-approval" in response.skills_invoked
+
+def test_ambiguous_routing():
+    """Verify LLM handles ambiguous requests gracefully."""
+    
+    # User says "post this" - could mean generate OR publish
+    user_message = "post this to Instagram"
+    
+    response = agent.process_message(user_id="test", content=user_message)
+    
+    # Should ask for clarification or choose most likely skill
+    assert response.success or "clarify" in response.content.lower()
+```
+
+### 2. Skill Quality Tests
+
+```python
+# tests/test_generate_post.py
+
+def test_generate_post_instagram():
+    """Verify Instagram posts meet platform requirements."""
+    
+    result = generate_post(topic="AI agents", platform="instagram")
+    
+    assert result["success"]
+    assert len(result["post"]["content"]) <= 2200
+    assert len(result["post"]["hashtags"]) <= 5
+    assert result["post"]["validation"]["within_limit"]
+
+def test_generate_post_x_character_limit():
+    """Verify X posts respect 280 character limit."""
+    
+    result = generate_post(topic="AI agents", platform="x")
+    
+    assert result["post"]["character_count"] <= 280
+
+def test_brand_voice_validation():
+    """Verify posts are validated against brand voice if defined."""
+    
+    # Create test BRAND_VOICE.md with forbidden phrases
+    write_brand_voice(forbidden_phrases=["game-changer", "revolutionary"])
+    
+    result = generate_post(topic="Our revolutionary AI is a game-changer", platform="x")
+    
+    # Should fail validation
+    assert not result["post"]["validation"]["brand_voice_valid"]
+```
+
+### 3. Integration Tests
+
+```python
+# tests/test_social_post_flow.py
+
+@pytest.mark.integration
+async def test_end_to_end_post_flow():
+    """Test complete flow: generate → approve → post."""
+    
+    # Step 1: Generate post
+    generate_response = await agent.process_message(
+        user_id="test@example.com",
+        content="Create a post about AI agents for X"
+    )
+    assert "post generated" in generate_response.content.lower()
+    
+    # Step 2: Request approval (should send Google Chat card)
+    approval_response = await agent.process_message(
+        user_id="test@example.com",
+        content="Send this for approval"
+    )
+    assert "approval requested" in approval_response.content.lower()
+    
+    # Step 3: Simulate approval (mock Google Chat interaction)
+    mock_approval(user="test@example.com", approved=True)
+    
+    # Step 4: Post content
+    post_response = await agent.process_message(
+        user_id="test@example.com",
+        content="Post it to X"
+    )
+    assert "posted successfully" in post_response.content.lower()
+    assert "https://x.com/" in post_response.content  # Should return post URL
+```
+
+---
+
+## Implementation Phases
+
+### Phase 2A: Skill Loader Enhancement (1-2 days)
+- [ ] Enhance SkillLoader to expose descriptions to LLM
+- [ ] Update Agent Core to include skill descriptions in system prompt
+- [ ] Write routing tests for Gemini
+- [ ] Validate Gemini correctly selects skills
+
+### Phase 2B: Vertical Slice (3-5 days)
+- [ ] Build generate-post skill (private repo)
+- [ ] Build request-approval skill (private repo)
+- [ ] Build post-content skill (private repo)
+- [ ] Test end-to-end: generate → approve → post to X
+- [ ] Validate all routing works correctly
+
+### Phase 2C: Extract Framework Components (2-3 days)
+- [ ] Extract ApprovalInterface to public framework
+- [ ] Move GoogleChatApproval to framework
+- [ ] Update private repo to use framework components
+- [ ] Add unit tests for framework components
+
+### Phase 2D: Additional Platforms (3-5 days)
+- [ ] Add Instagram support to post-content
+- [ ] Add TikTok support
+- [ ] Add LinkedIn, Reddit support
+- [ ] Platform-specific validation
+
+### Phase 2E: Campaign Planning (5-7 days)
+- [ ] Build search-web skill (Perplexity MCP)
+- [ ] Build analyze-competitor skill (Firecrawl MCP)
+- [ ] Build create-campaign skill (menu pattern)
+- [ ] Build schedule-campaign skill
+- [ ] Extract CronScheduler to framework
+
+---
+
+## Success Criteria
+
+Phase 2 is complete when:
+- [ ] Skill routing works reliably with Gemini
+- [ ] Vertical slice (generate → approve → post) works end-to-end
+- [ ] At least 2 platforms supported (X + Instagram minimum)
+- [ ] ApprovalInterface extracted to framework
+- [ ] All routing tests passing
+- [ ] All skill quality tests passing
+- [ ] End-to-end integration test passing
+- [ ] Documentation updated with skill design guidelines
+
+---
+
+## References
+
+- [Cursor Skills Blog Post](https://www.cursor.com/blog/skills) - Skill design best practices
+- [Phase 1 Complete](./phase-1-core-foundation.md) - Current framework state
+- [Skills System Reference](../ref/05_skills_system.md) - Current skill loader
+- [LangGraph Documentation](https://langchain-ai.github.io/langgraph/) - Agent orchestration
+
+---
+
+## Next Phase
+
+After Phase 2 is complete and working:
+- **Phase 3:** Production deployment, monitoring, and framework packaging
+- Focus: Cloud Run deployment, observability, error handling, framework versioning
+
+---
+
+## IMPORTANT: Skills Live in Private Repo
+
+**Reminder:** All marketing skills (generate-post, post-content, etc.) are built in **auriga-marketing-bot** (private repo), NOT in monkey-bot. Only generic framework components (ApprovalInterface, CronScheduler, enhanced SkillLoader) go in monkey-bot (public repo).
+
+This document describes framework changes needed in PUBLIC repo to support private marketing skills.
+
+---
+
+## OLD CONTENT BELOW (For Reference - Will Be Removed)
 
 ### 2. Campaign Workflow Skills
 

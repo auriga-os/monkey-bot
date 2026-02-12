@@ -136,7 +136,7 @@ def post_to_linkedin(
 
     # Mock response for MVP testing
     mock_post_id = "urn:li:share:7234567890123456789"
-    
+
     return {
         "post_id": mock_post_id,
         "post_url": f"https://www.linkedin.com/feed/update/{mock_post_id}",

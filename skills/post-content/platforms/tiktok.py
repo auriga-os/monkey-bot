@@ -100,7 +100,7 @@ def post_to_tiktok(content: str, media_urls: List[str]) -> Dict[str, Any]:
 
     # Step 2: Upload video (simplified - actual implementation needs chunking)
     # Upload video file to upload_url
-    
+
     # Step 3: Publish video
     publish_response = requests.post(
         f"{BASE_URL}/post/publish/video/init/",
@@ -137,7 +137,7 @@ def post_to_tiktok(content: str, media_urls: List[str]) -> Dict[str, Any]:
     # Mock response for MVP testing
     mock_post_id = "7234567890123456789"
     mock_username = "auriga_os"
-    
+
     return {
         "post_id": mock_post_id,
         "post_url": f"https://tiktok.com/@{mock_username}/video/{mock_post_id}",

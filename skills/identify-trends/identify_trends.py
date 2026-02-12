@@ -11,7 +11,7 @@ import logging
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Dict, List, Literal, Optional
+from typing import List, Literal
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -19,7 +19,6 @@ logger = logging.getLogger(__name__)
 
 # Import search_web from sibling skill
 sys.path.insert(0, str(Path(__file__).parent.parent / "search-web"))
-from search_web import search_web
 
 
 @dataclass
@@ -128,7 +127,7 @@ def identify_trends(
 
     # Step 3: Analyze trends using LLM
     from llm_client import LLMClient
-    
+
     results_text = "\\n".join([
         f"- {r.title}: {r.snippet}"
         for r in all_results[:50]  # Limit to avoid token overflow
@@ -279,20 +278,20 @@ def main():
             print(f"\n📊 Trend Analysis: {response.topic}")
             print(f"Time Range: {response.time_range}")
             print(f"Sources Analyzed: {response.source_count}\n")
-            
+
             print("🔥 Top 5 Trending Topics:")
             for i, trend in enumerate(response.trends.trending_topics, 1):
                 print(f"{i}. {trend.topic}")
                 print(f"   {trend.explanation}\n")
-            
+
             print("🌱 Emerging Themes:")
             for theme in response.trends.emerging_themes:
                 print(f"  • {theme}")
-            
-            print(f"\n#️⃣  Popular Keywords:")
+
+            print("\n#️⃣  Popular Keywords:")
             print(f"  {', '.join(response.trends.popular_keywords)}")
-            
-            print(f"\n💡 Content Opportunities:")
+
+            print("\n💡 Content Opportunities:")
             for opp in response.trends.content_opportunities:
                 print(f"  • {opp}")
             print()
