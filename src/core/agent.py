@@ -7,6 +7,7 @@ skills engine, and memory manager to process user messages.
 import asyncio
 import contextlib
 import logging
+from typing import Any
 
 from .interfaces import (
     AgentCoreInterface,
@@ -71,6 +72,7 @@ class AgentCore(AgentCoreInterface):
         skills_engine: SkillsEngineInterface,
         memory_manager: MemoryManagerInterface,
         scheduler_check_interval: int = 10,
+        scheduler_storage: Any = None,
     ) -> None:
         """Initialize Agent Core.
 
@@ -82,6 +84,7 @@ class AgentCore(AgentCoreInterface):
             skills_engine: Skills execution engine (MockSkillsEngine for Sprint 1)
             memory_manager: Memory manager (MockMemoryManager for Sprint 1)
             scheduler_check_interval: Seconds between scheduler checks (default 10)
+            scheduler_storage: Storage backend for scheduler jobs (defaults to JSON)
         """
         self.llm = llm_client
         self.skills = skills_engine
@@ -91,7 +94,8 @@ class AgentCore(AgentCoreInterface):
         # Note: Scheduler must be explicitly started with start_scheduler()
         self.scheduler = CronScheduler(
             agent_state=memory_manager,  # Pass memory manager as agent state
-            check_interval_seconds=scheduler_check_interval
+            check_interval_seconds=scheduler_check_interval,
+            storage=scheduler_storage,
         )
         self._scheduler_task = None
 

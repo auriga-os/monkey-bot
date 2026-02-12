@@ -69,6 +69,8 @@ gcloud run deploy "$CLOUD_RUN_SERVICE_NAME" \
     --set-env-vars="MEMORY_DIR=/app/data/memory" \
     --set-env-vars="SKILLS_DIR=/app/skills" \
     --set-env-vars="LOG_LEVEL=INFO" \
+    --set-env-vars="SCHEDULER_STORAGE=${SCHEDULER_STORAGE:-json}" \
+    --set-env-vars="CRON_SECRET=${CRON_SECRET:-}" \
     --service-account="$(gcloud iam service-accounts list --filter="displayName:Compute Engine default service account" --format="value(email)")"
 
 echo
