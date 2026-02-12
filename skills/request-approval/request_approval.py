@@ -36,9 +36,7 @@ class ApprovalResult:
     timestamp: str
 
 
-def create_approval_record(
-    content: str, content_type: str, platform: Optional[str]
-) -> str:
+def create_approval_record(content: str, content_type: str, platform: Optional[str]) -> str:
     """
     Create approval record and return approval ID.
 
@@ -120,18 +118,14 @@ def send_approval_card_to_chat(
                         "title": f"Approval Request: {content_type}",
                         "subtitle": f"Platform: {platform or 'N/A'}",
                     },
-                    "sections": [
-                        {"widgets": [{"textParagraph": {"text": content[:500]}}]}
-                    ],
+                    "sections": [{"widgets": [{"textParagraph": {"text": content[:500]}}]}],
                     "cardActions": [
                         {
                             "actionLabel": "✅ Approve",
                             "onClick": {
                                 "action": {
                                     "function": "approve",
-                                    "parameters": [
-                                        {"key": "approval_id", "value": approval_id}
-                                    ],
+                                    "parameters": [{"key": "approval_id", "value": approval_id}],
                                 }
                             },
                         },
@@ -140,9 +134,7 @@ def send_approval_card_to_chat(
                             "onClick": {
                                 "action": {
                                     "function": "reject",
-                                    "parameters": [
-                                        {"key": "approval_id", "value": approval_id}
-                                    ],
+                                    "parameters": [{"key": "approval_id", "value": approval_id}],
                                 }
                             },
                         },
@@ -151,9 +143,7 @@ def send_approval_card_to_chat(
                             "onClick": {
                                 "action": {
                                     "function": "modify",
-                                    "parameters": [
-                                        {"key": "approval_id", "value": approval_id}
-                                    ],
+                                    "parameters": [{"key": "approval_id", "value": approval_id}],
                                 }
                             },
                         },
@@ -243,9 +233,7 @@ async def wait_for_approval(approval_id: str, timeout_seconds: int) -> ApprovalR
 
     # Timeout
     logger.warning(f"Approval {approval_id}: TIMEOUT")
-    raise TimeoutError(
-        f"Approval timeout after {timeout_seconds}s. " f"No response from user."
-    )
+    raise TimeoutError(f"Approval timeout after {timeout_seconds}s. No response from user.")
 
 
 async def request_approval(
@@ -336,13 +324,13 @@ def main():
             print(json.dumps(asdict(result), indent=2))
         else:
             if result.approved:
-                print(f"\n✅ APPROVED")
+                print("\n✅ APPROVED")
                 if result.feedback:
                     print(f"Feedback: {result.feedback}")
                 if result.modified_content:
                     print(f"Modified content:\n{result.modified_content}")
             else:
-                print(f"\n❌ REJECTED")
+                print("\n❌ REJECTED")
                 if result.feedback:
                     print(f"Feedback: {result.feedback}")
 

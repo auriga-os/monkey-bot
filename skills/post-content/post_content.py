@@ -19,9 +19,6 @@ from typing import List, Literal, Optional
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
-# Import platform implementations
-from platforms.x import post_to_x
-
 # Paths
 APPROVALS_DIR = Path("./data/memory/approvals")
 POSTS_DIR = Path("./data/memory/posts")
@@ -146,6 +143,9 @@ def post_content(
         >>> print(result.platform_post_url)
         'https://x.com/auriga_os/status/1234567890'
     """
+    # Import here to avoid circular dependency issues
+    from platforms.x import post_to_x
+
     logger.info(
         f"Posting content to {platform}",
         extra={"platform": platform, "content_length": len(content)},
