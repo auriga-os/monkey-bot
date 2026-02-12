@@ -224,6 +224,9 @@ class TestCronScheduler:
         # Create new scheduler (simulates restart)
         scheduler2 = CronScheduler(mock_agent_state, check_interval_seconds=1)
         
+        # Load jobs explicitly (async operation)
+        await scheduler2._load_jobs()
+        
         # Should have loaded job from disk
         assert len(scheduler2.jobs) == 1
         assert scheduler2.jobs[0]["id"] == job_id

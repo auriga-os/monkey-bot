@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 
 from src.gateway.interfaces import AgentCoreInterface, AgentError
-from src.gateway.models import GoogleChatResponse, GoogleChatWebhook, HealthCheckResponse
+from src.gateway.models import CronTickResponse, GoogleChatResponse, GoogleChatWebhook, HealthCheckResponse
 from src.gateway.mocks import MockAgentCore
 from src.gateway.pii_filter import filter_google_chat_pii
 
@@ -199,6 +199,139 @@ async def webhook(payload: GoogleChatWebhook) -> GoogleChatResponse:
 
     # Return response in Google Chat Cards V2 format
     return GoogleChatResponse(text=response_text)
+
+
+@app.post("/cron/tick", response_model=CronTickResponse, status_code=status.HTTP_200_OK)
+async def cron_tick(request: Request) -> CronTickResponse:
+    """
+    Handle Cloud Scheduler tick for background job execution.
+    
+    This endpoint is called by Cloud Scheduler at a configured interval
+    (e.g., every minute) to check for and execute due jobs. It runs a single
+    scheduler cycle and returns quickly with summary metrics.
+    
+    Authentication:
+    - Cloud Scheduler uses OIDC token with service account
+    - For MVP, also supports X-Cloudscheduler header from Cloud Scheduler
+    - In production, validate OIDC audience/issuer via Cloud Run IAM
+    
+    Process flow:
+    1. Authenticate request (OIDC token or scheduler header)
+    2. Run single scheduler tick (check due jobs, execute)
+    3. Return metrics (jobs checked, executed, succeeded, failed)
+    
+    Returns:
+        CronTickResponse with execution metrics
+        
+    Raises:
+        HTTPException(401): If authentication fails
+        HTTPException(500): If scheduler execution fails
+    """
+    trace_id = str(uuid.uuid4())
+    start_time = datetime.now(timezone.utc)
+    
+    log_structured(
+        "INFO",
+        "Cron tick received",
+        trace_id=trace_id,
+    )
+    
+    # Authentication: Check for Cloud Scheduler headers or OIDC token
+    # For MVP: Accept X-Cloudscheduler header (set by Cloud Scheduler)
+    # TODO: Add OIDC token validation for production
+    scheduler_header = request.headers.get("X-Cloudscheduler")
+    cron_secret = os.getenv("CRON_SECRET")
+    
+    # Allow requests with Cloud Scheduler header OR matching secret
+    if not scheduler_header and cron_secret:
+        # Check for secret-based auth as fallback
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            log_structured(
+                "WARNING",
+                "Unauthorized cron tick attempt - missing auth",
+                trace_id=trace_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Unauthorized: Missing authentication",
+            )
+        
+        token = auth_header.split(" ")[1]
+        if token != cron_secret:
+            log_structured(
+                "WARNING",
+                "Unauthorized cron tick attempt - invalid token",
+                trace_id=trace_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Unauthorized: Invalid token",
+            )
+    
+    # Execute scheduler tick
+    try:
+        # Check if agent_core has scheduler (it should if properly initialized)
+        if not hasattr(agent_core, 'scheduler'):
+            log_structured(
+                "ERROR",
+                "Scheduler not initialized in agent core",
+                trace_id=trace_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Scheduler not initialized",
+            )
+        
+        # Run single tick (will add this method to scheduler)
+        tick_result = await agent_core.scheduler.run_tick()
+        
+        execution_time_ms = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
+        
+        metrics = {
+            "jobs_checked": tick_result.get("jobs_checked", 0),
+            "jobs_due": tick_result.get("jobs_due", 0),
+            "jobs_executed": tick_result.get("jobs_executed", 0),
+            "jobs_succeeded": tick_result.get("jobs_succeeded", 0),
+            "jobs_failed": tick_result.get("jobs_failed", 0),
+            "execution_time_ms": execution_time_ms,
+        }
+        
+        log_structured(
+            "INFO",
+            "Cron tick completed successfully",
+            trace_id=trace_id,
+            **metrics,
+        )
+        
+        return CronTickResponse(
+            status="success",
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            trace_id=trace_id,
+            metrics=metrics,
+        )
+        
+    except Exception as e:
+        execution_time_ms = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
+        
+        log_structured(
+            "ERROR",
+            f"Cron tick failed: {str(e)}",
+            trace_id=trace_id,
+            error_type=type(e).__name__,
+            execution_time_ms=execution_time_ms,
+        )
+        
+        return CronTickResponse(
+            status="error",
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            trace_id=trace_id,
+            metrics={
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "execution_time_ms": execution_time_ms,
+            },
+        )
 
 
 @app.get("/health", response_model=HealthCheckResponse)

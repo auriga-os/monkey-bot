@@ -173,3 +173,40 @@ class HealthCheckResponse(BaseModel):
         except ValueError as e:
             raise ValueError(f"Timestamp must be in ISO8601 format: {e}") from e
         return v
+
+
+class CronTickResponse(BaseModel):
+    """
+    Response from /cron/tick endpoint.
+    
+    Returns summary metrics about the scheduler tick execution.
+    Used by Cloud Scheduler to verify successful execution.
+    """
+    
+    status: str = Field(
+        ...,
+        description="Execution status: 'success' or 'error'",
+        examples=["success", "error"],
+    )
+    timestamp: str = Field(
+        ...,
+        description="Tick execution timestamp in ISO8601 format",
+        examples=["2026-02-11T22:00:00Z"],
+    )
+    trace_id: str = Field(
+        ...,
+        description="Trace ID for this tick execution",
+        examples=["abc-123-def-456"],
+    )
+    metrics: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Execution metrics",
+        examples=[{
+            "jobs_checked": 10,
+            "jobs_due": 2,
+            "jobs_executed": 2,
+            "jobs_succeeded": 1,
+            "jobs_failed": 1,
+            "execution_time_ms": 1234
+        }],
+    )

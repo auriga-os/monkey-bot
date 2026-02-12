@@ -11,6 +11,8 @@ from datetime import datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
+from .storage import JobStorage, create_storage
+
 logger = logging.getLogger(__name__)
 
 
@@ -36,19 +38,35 @@ class CronScheduler:
         >>> await scheduler.start()  # Start background processing
     """
 
-    def __init__(self, agent_state: Any, check_interval_seconds: int = 10):
+    def __init__(
+        self, 
+        agent_state: Any, 
+        check_interval_seconds: int = 10,
+        storage: JobStorage | None = None,
+    ):
         """Initialize scheduler.
 
         Args:
             agent_state: Agent state for accessing skills and memory
             check_interval_seconds: How often to check for due jobs (default 10)
+            storage: Job storage backend (defaults to JSON file storage)
         """
         self.agent_state = agent_state
         self.check_interval = check_interval_seconds
         self.jobs: list[dict[str, Any]] = []
         self.running = False
         self._job_handlers: dict[str, Any] = {}
-        self._load_jobs()
+        
+        # Initialize storage backend
+        if storage is None:
+            # Default to JSON file storage for backward compatibility
+            self.storage = create_storage("json", memory_dir=agent_state.memory_dir)
+        else:
+            self.storage = storage
+        
+        # Load jobs from storage asynchronously is not possible in __init__
+        # Will be loaded on first tick or start()
+        self._jobs_loaded = False
 
     async def schedule_job(
         self,
@@ -87,7 +105,7 @@ class CronScheduler:
         }
 
         self.jobs.append(job)
-        self._save_jobs()
+        await self._save_jobs()
 
         logger.info(
             "Job scheduled",
@@ -100,11 +118,97 @@ class CronScheduler:
 
         return job_id
 
+    async def run_tick(self) -> dict[str, int]:
+        """Run a single scheduler tick (check and execute due jobs once).
+        
+        This is the primary method for Cloud Scheduler-triggered execution.
+        It checks for due jobs, executes them, and returns metrics.
+        
+        This method is idempotent and safe to call concurrently from multiple
+        scheduler instances (with proper state backend locking).
+        
+        Returns:
+            Dict with execution metrics:
+                - jobs_checked: Total jobs examined
+                - jobs_due: Number of jobs that were due
+                - jobs_executed: Number of jobs attempted
+                - jobs_succeeded: Number of jobs that completed successfully
+                - jobs_failed: Number of jobs that failed
+                
+        Example:
+            >>> scheduler = CronScheduler(agent_state)
+            >>> result = await scheduler.run_tick()
+            >>> print(f"Executed {result['jobs_executed']} jobs")
+        """
+        logger.info("Running scheduler tick")
+        
+        # Reload jobs from storage to get latest state
+        await self._load_jobs()
+        
+        now = datetime.utcnow()
+        metrics = {
+            "jobs_checked": len(self.jobs),
+            "jobs_due": 0,
+            "jobs_executed": 0,
+            "jobs_succeeded": 0,
+            "jobs_failed": 0,
+        }
+        
+        # Check each job
+        for job in self.jobs:
+            if job["status"] != "pending":
+                continue
+                
+            schedule_at = datetime.fromisoformat(job["schedule_at"])
+            
+            if schedule_at <= now:
+                metrics["jobs_due"] += 1
+                
+                # Try to claim the job (distributed lock)
+                job_id = job["id"]
+                claimed = await self.storage.claim_job(job_id)
+                
+                if not claimed:
+                    logger.info(f"Job {job_id} already claimed by another worker")
+                    continue
+                
+                metrics["jobs_executed"] += 1
+                
+                try:
+                    # Execute job and track result
+                    await self._execute_job(job)
+                    
+                    # Check final status to update metrics
+                    if job.get("status") == "completed":
+                        metrics["jobs_succeeded"] += 1
+                    elif job.get("status") == "failed":
+                        metrics["jobs_failed"] += 1
+                finally:
+                    # Always release the lease
+                    await self.storage.release_job(job_id)
+        
+        logger.info(
+            "Scheduler tick completed",
+            extra={
+                "jobs_checked": metrics["jobs_checked"],
+                "jobs_due": metrics["jobs_due"],
+                "jobs_executed": metrics["jobs_executed"],
+                "jobs_succeeded": metrics["jobs_succeeded"],
+                "jobs_failed": metrics["jobs_failed"],
+            }
+        )
+        
+        return metrics
+
     async def start(self):
-        """Start the scheduler background task.
+        """Start the scheduler background task (legacy/dev mode).
 
         This method runs continuously, checking for due jobs every
         check_interval seconds. Call stop() to terminate.
+        
+        Note: For Cloud Run production, use run_tick() called by Cloud Scheduler
+        instead of this continuous loop. This method is kept for backward
+        compatibility and local development.
 
         Example:
             >>> scheduler = CronScheduler(agent_state)
@@ -113,10 +217,10 @@ class CronScheduler:
             >>> await scheduler.stop()
         """
         self.running = True
-        logger.info("Cron scheduler started")
+        logger.info("Cron scheduler started (continuous mode)")
 
         while self.running:
-            await self._check_and_execute_jobs()
+            await self.run_tick()
             await asyncio.sleep(self.check_interval)
 
     async def stop(self):
@@ -173,7 +277,7 @@ class CronScheduler:
         try:
             job["status"] = "running"
             job["started_at"] = datetime.utcnow().isoformat()
-            self._save_jobs()
+            await self._save_jobs()
 
             # Look up handler from registry
             handler = self._job_handlers.get(job_type)
@@ -213,21 +317,16 @@ class CronScheduler:
         finally:
             # Ensure agent state is cleaned up before saving
             job.pop("_agent_state", None)
-            self._save_jobs()
+            await self._save_jobs()
 
-    def _load_jobs(self):
-        """Load jobs from disk (persistence)."""
-        jobs_file = self.agent_state.memory_dir / "scheduler" / "jobs.json"
+    async def _load_jobs(self):
+        """Load jobs from storage backend."""
+        self.jobs = await self.storage.load_jobs()
+        self._jobs_loaded = True
 
-        if jobs_file.exists():
-            self.jobs = json.loads(jobs_file.read_text())
-            logger.info(f"Loaded {len(self.jobs)} jobs from disk")
-
-    def _save_jobs(self):
-        """Save jobs to disk (persistence)."""
-        jobs_file = self.agent_state.memory_dir / "scheduler" / "jobs.json"
-        jobs_file.parent.mkdir(parents=True, exist_ok=True)
-        jobs_file.write_text(json.dumps(self.jobs, indent=2))
+    async def _save_jobs(self):
+        """Save jobs to storage backend."""
+        await self.storage.save_jobs(self.jobs)
 
     def get_pending_jobs(self) -> list[dict[str, Any]]:
         """Get all pending jobs.

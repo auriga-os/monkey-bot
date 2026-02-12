@@ -27,6 +27,7 @@ from langchain_google_vertexai import ChatVertexAI  # noqa: E402
 from src.core.agent import AgentCore  # noqa: E402
 from src.core.llm_client import LLMClient  # noqa: E402
 from src.core.memory import MemoryManager  # noqa: E402
+from src.core.scheduler import create_storage  # noqa: E402
 from src.core.terminal import TerminalExecutor  # noqa: E402
 from src.gateway import server  # noqa: E402
 from src.skills.executor import SkillsEngine  # noqa: E402
@@ -116,8 +117,22 @@ def create_app():
         f"✅ Memory Manager created (dir={memory_dir}, gcs_enabled={gcs_enabled})"
     )
     
+    # Create Scheduler Storage Backend
+    scheduler_storage_type = os.getenv("SCHEDULER_STORAGE", "json")  # json or firestore
+    if scheduler_storage_type == "firestore":
+        scheduler_storage = create_storage("firestore", project_id=project_id)
+        logger.info("✅ Scheduler storage: Firestore")
+    else:
+        scheduler_storage = create_storage("json", memory_dir=Path(memory_dir))
+        logger.info("✅ Scheduler storage: JSON files")
+    
     # Create Agent Core (depends on all above)
-    agent_core = AgentCore(llm_client, skills_engine, memory_manager)
+    agent_core = AgentCore(
+        llm_client, 
+        skills_engine, 
+        memory_manager,
+        scheduler_storage=scheduler_storage,
+    )
     logger.info("✅ Agent Core created")
     
     # Inject Agent Core into Gateway (replace MockAgentCore)
