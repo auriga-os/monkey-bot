@@ -108,7 +108,7 @@ def save_post_record(content: str, platform: str, result: PostResult) -> None:
 
 def post_content(
     content: str,
-    platform: Literal["x", "instagram", "tiktok"],
+    platform: Literal["x", "instagram", "tiktok", "linkedin"],
     media_urls: List[str] = [],
     approval_id: Optional[str] = None,
 ) -> PostResult:
@@ -123,7 +123,7 @@ def post_content(
 
     Args:
         content: Post text
-        platform: Target platform ("x", "instagram", or "tiktok")
+        platform: Target platform ("x", "instagram", "tiktok", or "linkedin")
         media_urls: Optional media attachments
         approval_id: Approval record ID (required)
 
@@ -147,6 +147,7 @@ def post_content(
     from platforms.x import post_to_x
     from platforms.instagram import post_to_instagram
     from platforms.tiktok import post_to_tiktok
+    from platforms.linkedin import post_to_linkedin
 
     logger.info(
         f"Posting content to {platform}",
@@ -163,8 +164,10 @@ def post_content(
         api_result = post_to_instagram(content, media_urls)
     elif platform == "tiktok":
         api_result = post_to_tiktok(content, media_urls)
+    elif platform == "linkedin":
+        api_result = post_to_linkedin(content, media_urls)
     else:
-        raise ValueError(f"Platform '{platform}' not supported. Supported platforms: x, instagram, tiktok")
+        raise ValueError(f"Platform '{platform}' not supported. Supported platforms: x, instagram, tiktok, linkedin")
 
     # Step 3: Build result
     result = PostResult(
@@ -192,8 +195,8 @@ def main():
     parser.add_argument(
         "--platform",
         required=True,
-        choices=["x", "instagram", "tiktok"],
-        help="Target platform (x, instagram, or tiktok)",
+        choices=["x", "instagram", "tiktok", "linkedin"],
+        help="Target platform (x, instagram, tiktok, or linkedin)",
     )
     parser.add_argument(
         "--media-urls",
