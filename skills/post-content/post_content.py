@@ -108,9 +108,10 @@ def save_post_record(content: str, platform: str, result: PostResult) -> None:
 
 def post_content(
     content: str,
-    platform: Literal["x", "instagram", "tiktok", "linkedin"],
+    platform: Literal["x", "instagram", "tiktok", "linkedin", "reddit"],
     media_urls: List[str] = [],
     approval_id: Optional[str] = None,
+    **kwargs
 ) -> PostResult:
     """
     Post content to social media platform.
@@ -123,9 +124,10 @@ def post_content(
 
     Args:
         content: Post text
-        platform: Target platform ("x", "instagram", "tiktok", or "linkedin")
+        platform: Target platform ("x", "instagram", "tiktok", "linkedin", or "reddit")
         media_urls: Optional media attachments
         approval_id: Approval record ID (required)
+        **kwargs: Platform-specific parameters (e.g., subreddit, title for Reddit)
 
     Returns:
         PostResult with platform IDs and URL
@@ -148,6 +150,7 @@ def post_content(
     from platforms.instagram import post_to_instagram
     from platforms.tiktok import post_to_tiktok
     from platforms.linkedin import post_to_linkedin
+    from platforms.reddit import post_to_reddit
 
     logger.info(
         f"Posting content to {platform}",
@@ -166,8 +169,17 @@ def post_content(
         api_result = post_to_tiktok(content, media_urls)
     elif platform == "linkedin":
         api_result = post_to_linkedin(content, media_urls)
+    elif platform == "reddit":
+        # Reddit requires additional parameters (subreddit, title)
+        api_result = post_to_reddit(
+            content=content,
+            subreddit=kwargs.get("subreddit", ""),
+            title=kwargs.get("title", ""),
+            post_type=kwargs.get("post_type", "text"),
+            flair_id=kwargs.get("flair_id")
+        )
     else:
-        raise ValueError(f"Platform '{platform}' not supported. Supported platforms: x, instagram, tiktok, linkedin")
+        raise ValueError(f"Platform '{platform}' not supported. Supported platforms: x, instagram, tiktok, linkedin, reddit")
 
     # Step 3: Build result
     result = PostResult(
@@ -195,8 +207,22 @@ def main():
     parser.add_argument(
         "--platform",
         required=True,
-        choices=["x", "instagram", "tiktok", "linkedin"],
-        help="Target platform (x, instagram, tiktok, or linkedin)",
+        choices=["x", "instagram", "tiktok", "linkedin", "reddit"],
+        help="Target platform (x, instagram, tiktok, linkedin, or reddit)",
+    )
+    parser.add_argument(
+        "--subreddit",
+        help="Subreddit name (required for Reddit)",
+    )
+    parser.add_argument(
+        "--title",
+        help="Post title (required for Reddit)",
+    )
+    parser.add_argument(
+        "--post-type",
+        choices=["text", "link"],
+        default="text",
+        help="Reddit post type (text or link)",
     )
     parser.add_argument(
         "--media-urls",
@@ -214,11 +240,19 @@ def main():
     args = parser.parse_args()
 
     try:
+        # Build kwargs for platform-specific parameters
+        kwargs = {}
+        if args.platform == "reddit":
+            kwargs["subreddit"] = args.subreddit
+            kwargs["title"] = args.title
+            kwargs["post_type"] = args.post_type
+        
         result = post_content(
             content=args.content,
             platform=args.platform,
             media_urls=args.media_urls,
             approval_id=args.approval_id,
+            **kwargs
         )
 
         if args.json:
