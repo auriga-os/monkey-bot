@@ -108,7 +108,7 @@ def save_post_record(content: str, platform: str, result: PostResult) -> None:
 
 def post_content(
     content: str,
-    platform: Literal["x"],
+    platform: Literal["x", "instagram"],
     media_urls: List[str] = [],
     approval_id: Optional[str] = None,
 ) -> PostResult:
@@ -123,7 +123,7 @@ def post_content(
 
     Args:
         content: Post text
-        platform: Target platform ("x" only for MVP)
+        platform: Target platform ("x" or "instagram")
         media_urls: Optional media attachments
         approval_id: Approval record ID (required)
 
@@ -145,6 +145,7 @@ def post_content(
     """
     # Import here to avoid circular dependency issues
     from platforms.x import post_to_x
+    from platforms.instagram import post_to_instagram
 
     logger.info(
         f"Posting content to {platform}",
@@ -157,8 +158,10 @@ def post_content(
     # Step 2: Post to platform
     if platform == "x":
         api_result = post_to_x(content, media_urls)
+    elif platform == "instagram":
+        api_result = post_to_instagram(content, media_urls)
     else:
-        raise ValueError(f"Platform '{platform}' not supported. Supported platforms: x")
+        raise ValueError(f"Platform '{platform}' not supported. Supported platforms: x, instagram")
 
     # Step 3: Build result
     result = PostResult(
@@ -186,8 +189,8 @@ def main():
     parser.add_argument(
         "--platform",
         required=True,
-        choices=["x"],
-        help="Target platform (x only for MVP)",
+        choices=["x", "instagram"],
+        help="Target platform (x or instagram)",
     )
     parser.add_argument(
         "--media-urls",
