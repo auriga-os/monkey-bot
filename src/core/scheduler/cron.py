@@ -159,6 +159,10 @@ class CronScheduler:
             # Execute based on job type
             if job_type == "post_content":
                 await self._execute_post_content(job)
+            elif job_type == "collect_metrics":
+                await self._execute_collect_metrics(job)
+            elif job_type == "send_weekly_report":
+                await self._execute_send_weekly_report(job)
             else:
                 raise ValueError(f"Unknown job type: {job_type}")
 
@@ -235,6 +239,45 @@ class CronScheduler:
                 "platform": payload["platform"]
             }
         )
+
+    async def _execute_collect_metrics(self, job: dict[str, Any]):
+        """Execute metrics collection job.
+
+        Collects engagement metrics from all social platforms
+        and saves to data/metrics directory.
+
+        Args:
+            job: Job dict with payload
+        """
+        from scripts.collect_metrics import MetricsCollector
+
+        collector = MetricsCollector(self.agent_state.memory_dir)
+        await collector.collect_all()
+
+        logger.info("Metrics collection completed")
+
+    async def _execute_send_weekly_report(self, job: dict[str, Any]):
+        """Execute weekly report job.
+
+        Generates and sends weekly engagement report to Google Chat.
+
+        Args:
+            job: Job dict with payload
+        """
+        import os
+        from scripts.generate_report import WeeklyReportGenerator
+
+        webhook_url = os.getenv("GOOGLE_CHAT_WEBHOOK")
+        if not webhook_url:
+            raise Exception("GOOGLE_CHAT_WEBHOOK not set")
+
+        generator = WeeklyReportGenerator(
+            self.agent_state.memory_dir,
+            webhook_url
+        )
+        await generator.generate_and_send()
+
+        logger.info("Weekly report sent")
 
     def _load_jobs(self):
         """Load jobs from disk (persistence)."""

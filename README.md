@@ -103,38 +103,123 @@ ruff check src/ tests/ --fix
 
 ### Cloud Run Deployment
 
-1. **Prerequisites:**
-   - GCP project with Vertex AI API enabled
-   - Service account with roles:
-     - Vertex AI User
-     - Storage Object Admin
-     - Cloud Run Admin
-   - GCS bucket created: `gsutil mb gs://your-bucket-name`
+#### Prerequisites
 
-2. **Configure `.env`:**
+- Docker installed locally
+- GCP project with billing enabled
+- gcloud CLI configured (`gcloud auth login`)
+- APIs enabled:
+  - Vertex AI API
+  - Secret Manager API
+  - Cloud Run API
+  - Container Registry API
+
+#### Step 1: Setup Secrets
+
+Follow [SECRETS.md](SECRETS.md) to configure all API keys and credentials in GCP Secret Manager.
+
+**Quick setup:**
+```bash
+# Google Chat webhook
+echo -n "your_webhook_url" | gcloud secrets create google-chat-webhook --data-file=-
+
+# Vertex AI & Auth
+echo -n "your-project-id" | gcloud secrets create vertex-ai-project-id --data-file=-
+echo -n "user@example.com" | gcloud secrets create allowed-users --data-file=-
+
+# Social platform credentials (see SECRETS.md for full list)
+echo -n "your_x_api_key" | gcloud secrets create x-api-key --data-file=-
+# ... (see SECRETS.md for all required secrets)
+```
+
+**Grant access to Cloud Run:**
+```bash
+PROJECT_NUMBER=$(gcloud projects describe YOUR_PROJECT_ID --format="value(projectNumber)")
+
+for SECRET in google-chat-webhook x-api-key x-api-secret vertex-ai-project-id allowed-users; do
+  gcloud secrets add-iam-policy-binding $SECRET \
+    --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+    --role="roles/secretmanager.secretAccessor"
+done
+```
+
+#### Step 2: Deploy to Cloud Run
+
+```bash
+# Set environment variables
+export GCP_PROJECT_ID=your-project-id
+export GCP_REGION=us-central1
+
+# Make deploy script executable
+chmod +x deploy.sh
+
+# Deploy
+./deploy.sh
+```
+
+The deployment script will:
+1. Build Docker image
+2. Push to Google Container Registry
+3. Deploy to Cloud Run with:
+   - 512Mi memory
+   - 1 CPU
+   - Max 1 instance (prevents race conditions in scheduler)
+   - Min 0 instances (scales to zero when idle)
+   - 5-minute timeout (for long-running operations)
+   - All secrets loaded from Secret Manager
+
+#### Step 3: Verify Deployment
+
+```bash
+# Check service status
+gcloud run services describe auriga-marketing-bot --region us-central1
+
+# Test health endpoint
+SERVICE_URL=$(gcloud run services describe auriga-marketing-bot --region us-central1 --format='value(status.url)')
+curl ${SERVICE_URL}/health
+
+# View logs
+gcloud logging read 'resource.type=cloud_run_revision AND resource.labels.service_name=auriga-marketing-bot' --limit 50
+```
+
+#### Step 4: Configure Google Chat
+
+1. Go to https://chat.google.com
+2. Create new app → Webhooks
+3. Set webhook URL: `https://YOUR-SERVICE-URL/webhook`
+4. Test by sending a message in Google Chat
+
+#### Rollback
+
+If deployment fails or you need to rollback:
+
+```bash
+# List revisions
+gcloud run revisions list --service auriga-marketing-bot --region us-central1
+
+# Rollback to previous revision
+gcloud run services update-traffic auriga-marketing-bot \
+    --to-revisions=PREVIOUS_REVISION=100 \
+    --region us-central1
+```
+
+### Automated Deployment with Cloud Build
+
+For continuous deployment, configure Cloud Build triggers:
+
+1. **Connect repository:**
    ```bash
-   # Set these in .env:
-   VERTEX_AI_PROJECT_ID=your-project-id
-   GCS_MEMORY_BUCKET=your-bucket-name
-   CLOUD_RUN_SERVICE_NAME=emonk-agent
-   CLOUD_RUN_REGION=us-central1
-   ALLOWED_USERS=user1@example.com,user2@example.com
+   gcloud builds triggers create github \
+       --repo-name=YOUR_REPO \
+       --repo-owner=YOUR_ORG \
+       --branch-pattern="^main$" \
+       --build-config=cloudbuild.yaml
    ```
 
-3. **Deploy:**
-   ```bash
-   chmod +x deploy.sh
-   ./deploy.sh
-   ```
-
-4. **Configure Google Chat webhook:**
-   - Go to https://chat.google.com
-   - Create app → Webhooks
-   - Set webhook URL: `https://YOUR-SERVICE-URL/webhook`
-
-5. **Test:**
-   - Send message in Google Chat
-   - Check logs: `gcloud run logs read emonk-agent --region us-central1`
+2. **Push to main branch** - Cloud Build automatically:
+   - Builds Docker image
+   - Pushes to GCR
+   - Deploys to Cloud Run
 
 ## Testing
 

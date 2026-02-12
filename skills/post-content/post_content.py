@@ -75,7 +75,7 @@ def verify_approval(approval_id: Optional[str]) -> None:
 
 def save_post_record(content: str, platform: str, result: PostResult) -> None:
     """
-    Save post record for tracking.
+    Save post record for tracking and metrics collection.
 
     Args:
         content: Posted content
@@ -83,26 +83,32 @@ def save_post_record(content: str, platform: str, result: PostResult) -> None:
         result: Post result with IDs and URL
 
     Notes:
-        - Saves to ./data/memory/posts/{post_id}.json
-        - Used for analytics and tracking
-        - Includes timestamp, platform, URL
+        - Saves to ./data/memory/posts/{platform}/{timestamp}_{post_id}.json
+        - Used for analytics and engagement metrics tracking
+        - Includes timestamp, platform, URL, post_id
+        - Organized by platform for efficient metrics collection
     """
-    POSTS_DIR.mkdir(parents=True, exist_ok=True)
+    # Create platform-specific directory
+    platform_posts_dir = POSTS_DIR / platform
+    platform_posts_dir.mkdir(parents=True, exist_ok=True)
 
     post_record = {
         "post_id": result.platform_post_id,
-        "platform": platform,
-        "content": content,
-        "url": result.platform_post_url,
+        "post_url": result.platform_post_url,
+        "content": content[:100],  # Truncate for storage efficiency
         "posted_at": result.posted_at,
+        "platform": platform
     }
 
-    post_file = POSTS_DIR / f"{result.platform_post_id}.json"
+    # Save with timestamp in filename for chronological ordering
+    from datetime import datetime
+    timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+    post_file = platform_posts_dir / f"{timestamp}_{result.platform_post_id}.json"
     post_file.write_text(json.dumps(post_record, indent=2))
 
     logger.info(
-        f"Saved post record: {result.platform_post_id}",
-        extra={"post_id": result.platform_post_id},
+        f"Saved post record for {platform}: {result.platform_post_id}",
+        extra={"post_id": result.platform_post_id, "platform": platform},
     )
 
 
