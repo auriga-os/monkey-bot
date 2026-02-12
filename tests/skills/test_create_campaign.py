@@ -245,7 +245,7 @@ class TestCampaignStructure:
         async def mock_generate(prompt):
             class Response:
                 text = json.dumps([
-                    {"angle": "Test", "message": "Test"} for _ in range(4)
+                    {"angle": "Test", "message": "Test"} for _ in range(2)
                 ])
             return Response()
         
