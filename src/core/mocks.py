@@ -10,7 +10,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from .interfaces import MemoryManagerInterface, Message, SkillResult, SkillsEngineInterface
+from .interfaces import Message, SkillResult, SkillsEngineInterface
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +71,7 @@ class MockSkillsEngine(SkillsEngineInterface):
         return ["memory-remember", "memory-recall", "file-ops"]
 
 
-class MockMemoryManager(MemoryManagerInterface):
+class MockMemoryManager:
     """Mock Memory Manager for Agent Core testing.
 
     Stores data in-memory (dict) instead of filesystem/GCS.

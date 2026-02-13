@@ -729,6 +729,176 @@ web_results, competitor_results, trends = results
 
 ---
 
+### Option 6: Sandboxed Code Execution (Modal/E2B)
+
+**Status:** Currently using allowlist-based TerminalExecutor (legacy/optional)
+
+**Purpose:** Secure code execution in isolated sandbox environments
+
+**Current Implementation:**
+
+The current `TerminalExecutor` (`src/core/terminal.py`) uses an allowlist-based approach:
+- **Allowed commands:** `cat`, `ls`, `echo`, `python`, `python3`, `uv`
+- **Allowed paths:** `./data/memory/`, `./skills/`, `./test-data/`
+- **Limitations:**
+  - No true isolation (runs on host)
+  - Limited command set
+  - Can execute Python scripts in skills directory (potential risk)
+  - 30s timeout, 1MB output limit
+
+**Recommended Future Approach:**
+
+For production deployments requiring true sandboxing, consider:
+
+#### A. Modal Integration
+
+```python
+# emonk/integrations/modal_executor.py
+
+import modal
+
+app = modal.App("emonk-sandbox")
+image = modal.Image.debian_slim().pip_install(
+    "langchain>=1.0.0",
+    "langgraph>=1.0.0",
+    "pandas>=2.0.0",
+)
+
+@app.function(image=image, timeout=300)
+def execute_skill(skill_code: str, args: dict) -> dict:
+    """Execute skill in isolated Modal sandbox.
+    
+    Args:
+        skill_code: Python code to execute
+        args: Skill arguments
+    
+    Returns:
+        Execution result with stdout, stderr, exit_code
+    """
+    import subprocess
+    import sys
+    
+    # Write skill code to temp file
+    with open("/tmp/skill.py", "w") as f:
+        f.write(skill_code)
+    
+    # Execute in isolated environment
+    result = subprocess.run(
+        [sys.executable, "/tmp/skill.py"],
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    
+    return {
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+        "exit_code": result.returncode,
+    }
+```
+
+**Benefits:**
+- True isolation per execution
+- Automatic scaling
+- GPU support if needed
+- Pay-per-execution pricing
+
+#### B. E2B Integration
+
+```python
+# emonk/integrations/e2b_executor.py
+
+from e2b_code_interpreter import CodeInterpreter
+
+async def execute_skill_e2b(skill_code: str, args: dict) -> dict:
+    """Execute skill in E2B sandbox.
+    
+    E2B provides Jupyter-like code execution with:
+    - File system isolation
+    - Package installation per session
+    - Long-running sessions
+    """
+    with CodeInterpreter() as sandbox:
+        # Install dependencies if needed
+        sandbox.notebook.exec_cell(
+            "!pip install -q langchain langgraph pandas"
+        )
+        
+        # Execute skill code
+        execution = sandbox.notebook.exec_cell(skill_code)
+        
+        return {
+            "stdout": execution.text,
+            "stderr": execution.error,
+            "exit_code": 0 if not execution.error else 1,
+            "results": execution.results,  # Rich outputs (plots, tables)
+        }
+```
+
+**Benefits:**
+- Jupyter-like experience
+- Rich output support (plots, dataframes)
+- Persistent sessions
+- Built for AI code execution
+
+#### C. Migration Path
+
+**Phase 1: Keep Current (Allowlist)**
+- Mark `TerminalExecutor` as legacy
+- Document security limitations
+- Use for low-risk deployments only
+
+**Phase 2: Add Modal/E2B Option**
+- Create new `SandboxExecutor` interface
+- Implement Modal or E2B backend
+- Make executor configurable via env var
+
+**Phase 3: Deprecate TerminalExecutor**
+- Migrate all production deployments
+- Remove allowlist executor
+- Update docs
+
+**Implementation Example:**
+
+```python
+# src/core/executor_factory.py
+
+def create_executor(executor_type: str = "terminal"):
+    """Factory for creating skill executors.
+    
+    Args:
+        executor_type: "terminal" (legacy), "modal", or "e2b"
+    
+    Returns:
+        Executor instance
+    """
+    if executor_type == "modal":
+        from .integrations.modal_executor import ModalExecutor
+        return ModalExecutor()
+    elif executor_type == "e2b":
+        from .integrations.e2b_executor import E2BExecutor
+        return E2BExecutor()
+    else:
+        # Legacy allowlist executor
+        from .terminal import TerminalExecutor
+        return TerminalExecutor()
+```
+
+**Cost Comparison:**
+
+| Executor | Cost | Security | Scalability |
+|----------|------|----------|-------------|
+| TerminalExecutor (current) | Free | Low | Limited |
+| Modal | ~$0.001/execution | High | Auto-scale |
+| E2B | ~$0.01/hour | High | Session-based |
+
+**Recommendation:**
+- **Development:** Keep TerminalExecutor for simplicity
+- **Production:** Use Modal for stateless executions, E2B for stateful sessions
+- **Enterprise:** Custom Docker/Kubernetes sandbox with network isolation
+
+---
+
 ## Feature Comparison
 
 | Feature | Complexity | Value | Dependencies |
@@ -738,6 +908,7 @@ web_results, competitor_results, trends = results
 | Web UI | High | Medium (UX) | Frontend skills |
 | Analytics | Medium | Medium (insights) | Data |
 | Performance | Medium | High (cost) | Redis |
+| Sandboxed Execution | Medium | High (security) | Modal/E2B |
 
 ---
 
@@ -802,6 +973,11 @@ web_results, competitor_results, trends = results
 - [ ] Response time <1 second (P95)
 - [ ] Cache hit rate >50%
 
+**Sandboxed Execution:**
+- [ ] All code executes in isolated environments
+- [ ] Zero security incidents from skill execution
+- [ ] Execution time <5 seconds (P95)
+
 ---
 
 ## Cost Implications
@@ -823,6 +999,11 @@ web_results, competitor_results, trends = results
 - Savings from caching: ~$50/month
 - Net savings: ~$20/month
 
+**Sandboxed Execution:**
+- Modal: ~$0.001/execution (~$10-30/month typical)
+- E2B: ~$0.01/hour (~$50-100/month typical)
+- Value: Prevents security incidents (invaluable)
+
 ---
 
 ## References
@@ -843,5 +1024,6 @@ Phase 5 features are **optional** but provide significant value for production u
 - Web UI: Choose if you have non-technical users
 - Analytics: Choose if you need data-driven insights
 - Performance: Choose if costs or latency are concerns
+- Sandboxed Execution: Choose if security is critical (production deployments)
 
 You can always add more features later based on user feedback and business needs.
