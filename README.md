@@ -11,6 +11,7 @@ Emonk is a lightweight, flexible framework that lets you build AI agents that au
 - 🤖 **LangGraph-based Agent** - Intelligent routing and orchestration
 - 🎯 **Simple Skill System** - Add custom skills via SKILL.md + Python
 - 💾 **Persistent Memory** - File-based with optional GCS sync
+- ⏰ **Cloud Scheduler-Ready Jobs** - `/cron/tick` endpoint with metrics
 - 🔒 **Secure Execution** - Allowlist-based command/path validation
 - 💬 **Google Chat Integration** - Interact via Google Chat webhooks
 - 📊 **Structured Logging** - JSON logs with trace IDs
@@ -132,9 +133,30 @@ ruff check src/ tests/ --fix
    - Create app → Webhooks
    - Set webhook URL: `https://YOUR-SERVICE-URL/webhook`
 
-5. **Test:**
+5. **Configure Cloud Scheduler (recommended for production):**
+   - Set `SCHEDULER_STORAGE=firestore` in `.env`
+   - Run `./setup-scheduler.sh`
+   - Verify with `gcloud scheduler jobs run emonk-agent-tick --location us-central1`
+
+6. **Test:**
    - Send message in Google Chat
    - Check logs: `gcloud run logs read emonk-agent --region us-central1`
+   - Check scheduler logs: `gcloud run logs read emonk-agent --region us-central1 --filter="jsonPayload.message:scheduler"`
+
+### Scheduler Migration (Recent)
+
+The scheduler architecture has been upgraded from an in-process loop to Cloud Scheduler-triggered ticks:
+
+- `POST /cron/tick` runs one scheduler cycle and returns execution metrics
+- Scheduler storage supports:
+  - `json` for local/dev
+  - `firestore` for production distributed locking
+- Optional `CRON_SECRET` auth is supported for non-Scheduler callers
+
+Use these guides for rollout details:
+- `SCHEDULER_SETUP.md` - full setup and IAM
+- `CLOUD_SCHEDULER_MIGRATION.md` - migration quick start
+- `ROLLOUT_GUIDE.md` - staged rollout and rollback plan
 
 ## Testing
 
@@ -151,6 +173,13 @@ export VERTEX_AI_PROJECT_ID=your-project-id
 
 # Run integration tests:
 pytest -m integration
+```
+
+### Run Scheduler Integration Tests
+```bash
+pytest tests/integration/test_cron_tick.py -v
+pytest tests/core/test_cron_scheduler.py -v
+pytest tests/unit/test_scheduler_storage.py -v
 ```
 
 ### Run All Tests with Coverage
@@ -199,46 +228,37 @@ See `.env.example` for complete list of configuration options.
 
 ## Project Status
 
-**Current Phase**: Sprint 1 - Core Foundation ✅ COMPLETE
+### Implemented
+- ✅ Core foundation (Gateway + Agent Core + LLM + Skills + Memory)
+- ✅ Google Chat webhook integration with allowlist and PII filtering
+- ✅ Scheduler engine with persistence, retry, and storage abstraction
+- ✅ Cloud Scheduler migration path (`/cron/tick`, setup/rollout docs, tests)
+- ✅ Cloud Run deployment scripts and environment configuration
 
-### Completed Stories
-- ✅ **Story 1**: Gateway Module (Google Chat integration, PII filtering, access control)
-- ✅ **Story 2**: Agent Core + LLM Client (LangGraph orchestration, Vertex AI wrapper)
-- ✅ **Story 3**: Skills Engine + Terminal Executor + Memory Manager
-- ✅ **Story 4**: Integration & Cloud Run Deployment (real Vertex AI, E2E tests)
-
-### Features
-- ✅ Core interfaces (single source of truth)
-- ✅ Real Vertex AI integration (Gemini 2.0 Flash)
-- ✅ Google Chat webhook integration
-- ✅ File-based memory with optional GCS sync
-- ✅ Skills engine with terminal executor
-- ✅ Comprehensive unit tests (80%+ coverage)
-- ✅ Integration tests with real API
-- ✅ Cloud Run deployment ready
-- ✅ Type checking (mypy strict mode)
-- ✅ Code formatting (ruff)
-
-### Upcoming (Sprint 2)
-- 📅 Streaming support for long responses
-- 📅 Additional example skills
-- 📅 Production monitoring and alerts
-- 📅 Performance optimizations
+### In Progress / Planned
+- 📋 Marketing campaign manager expansion tracked in `.monkeymode/marketing-campaign-manager/`
+- 📋 Additional domain skills and platform integrations (see `docs/phases/phase-2-marketing-campaign.md`)
+- 📋 Production hardening and advanced features (see `docs/phases/README.md`)
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────┐
-│           Gateway (Google Chat)             │
-│         POST /webhook, GET /health          │
-└──────────────────┬──────────────────────────┘
-                   │
-                   ▼
+│            Gateway (FastAPI)                │
+│   POST /webhook   POST /cron/tick   GET /health
+└──────────────┬──────────────────────┬──────────┘
+               │                      │
+               │                      ▼
+               │            ┌──────────────────────┐
+               │            │ Cloud Scheduler (GCP)│
+               │            │ Trigger cadence      │
+               │            └──────────────────────┘
+               ▼
 ┌─────────────────────────────────────────────┐
-│            Agent Core (LangGraph)            │
+│            Agent Core (LangGraph)           │
 │   - Message routing & orchestration         │
 │   - Conversation context (last 10 msgs)     │
-│   - LLM integration (Gemini 2.5 Flash)      │
+│   - LLM integration (Gemini 2.0 Flash)      │
 └──┬──────────────┬──────────────┬────────────┘
    │              │              │
    ▼              ▼              ▼
@@ -246,6 +266,12 @@ See `.env.example` for complete list of configuration options.
 │Skills  │  │Terminal  │  │Memory    │
 │Engine  │  │Executor  │  │Manager   │
 └────────┘  └──────────┘  └──────────┘
+                   │
+                   ▼
+           ┌───────────────────┐
+           │ Cron Scheduler    │
+           │ JSON / Firestore  │
+           └───────────────────┘
 ```
 
 ## Usage

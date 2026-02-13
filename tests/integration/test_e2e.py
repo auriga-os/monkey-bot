@@ -20,23 +20,52 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from dotenv import load_dotenv
 from fastapi.testclient import TestClient
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.outputs import ChatGeneration, ChatResult
 
 # Load .env file for integration tests
 load_dotenv()
 
 
+class FakeChatModelWithTools(BaseChatModel):
+    """Fake chat model for testing that supports bind_tools."""
+    
+    responses: list[str] = ["Mock response from Gemini", "Mock response 2", "Mock response 3"]
+    current_index: int = 0
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.responses = kwargs.get('responses', self.responses)
+        self.current_index = 0
+    
+    def _generate(self, messages, stop=None, **kwargs):
+        """Generate a response synchronously."""
+        response_text = self.responses[self.current_index % len(self.responses)]
+        self.current_index += 1
+        return ChatResult(generations=[ChatGeneration(message=AIMessage(content=response_text))])
+    
+    async def _agenerate(self, messages, stop=None, **kwargs):
+        """Generate a response asynchronously."""
+        response_text = self.responses[self.current_index % len(self.responses)]
+        self.current_index += 1
+        return ChatResult(generations=[ChatGeneration(message=AIMessage(content=response_text))])
+    
+    @property
+    def _llm_type(self) -> str:
+        """Return identifier for this LLM."""
+        return "fake-with-tools"
+    
+    def bind_tools(self, tools, **kwargs):
+        """Bind tools to the model (no-op for testing)."""
+        # Return self to maintain interface compatibility
+        return self
+
+
 @pytest.fixture
 def mock_vertex_ai():
-    """Mock Vertex AI for fast, free tests."""
-    class MockResponse:
-        def __init__(self, content):
-            self.content = content
-    
-    mock = AsyncMock()
-    mock.ainvoke = AsyncMock(
-        return_value=MockResponse("Mock response from Gemini")
-    )
-    return mock
+    """Mock Vertex AI for fast, free tests with tool support."""
+    return FakeChatModelWithTools()
 
 
 @pytest.fixture

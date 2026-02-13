@@ -1,12 +1,11 @@
-"""Shared interfaces for Emonk agent components.
+"""Shared interfaces for monkey-bot agent components.
 
-This file is owned by Story 2 and defines ALL interfaces used across the project.
-Story 3 imports from this file to implement SkillsEngineInterface and MemoryManagerInterface.
+This file defines interfaces and data structures used across the project.
+With LangChain v1, many interfaces are replaced by LangChain/LangGraph primitives:
+- MemoryManagerInterface → LangGraph Store + Checkpointer
+- LLMClient → BaseChatModel from LangChain
 
-This is the single source of truth for:
-- All abstract base classes (interfaces)
-- All data structures (dataclasses)
-- All custom exceptions
+Remaining interfaces for backward compatibility and skills system.
 """
 
 from abc import ABC, abstractmethod
@@ -43,11 +42,13 @@ class SkillResult:
         success: True if skill executed successfully, False otherwise
         output: Skill output text (stdout or result data)
         error: Error message if success is False, None otherwise
+        data: Optional structured data (for skills that return JSON/dicts)
     """
 
     success: bool
     output: str
     error: str | None = None
+    data: dict[str, Any] | None = None
 
 
 @dataclass
@@ -86,7 +87,7 @@ class AgentError(EmonkError):
     Examples:
         - LLM call fails
         - Message processing fails
-        - Conversation history unavailable
+        - Graph execution error
     """
 
     pass
@@ -100,6 +101,9 @@ class LLMError(EmonkError):
         - Rate limit exceeded (429)
         - Model unavailable (503)
         - Invalid API credentials
+        
+    Note: With LangChain v1, most LLM errors are handled by the framework,
+    but this exception is kept for explicit error handling when needed.
     """
 
     pass
@@ -134,20 +138,20 @@ class SecurityError(EmonkError):
 
 
 # ============================================================================
-# Agent Core Interface
+# Agent Core Interface (for Gateway compatibility)
 # ============================================================================
 
 
 class AgentCoreInterface(ABC):
-    """Contract that Gateway will call.
+    """Contract that Gateway calls.
 
     This interface defines how external components (Gateway) interact with
-    the agent core. Implemented by AgentCore in src/core/agent.py.
+    the agent. Implemented by AgentWrapper in src/core/agent.py.
 
     Key responsibilities:
         - Process user messages
-        - Manage conversation context
-        - Route to appropriate skills
+        - Maintain conversation context via LangGraph checkpointer
+        - Execute tools/skills
         - Return formatted responses
     """
 
@@ -168,17 +172,17 @@ class AgentCoreInterface(ABC):
             Response text to send back to user via Gateway
 
         Raises:
-            AgentError: If processing fails (LLM error, memory error, etc.)
+            AgentError: If processing fails (LLM error, tool error, etc.)
 
         Example:
-            >>> agent = AgentCore(llm, skills, memory)
+            >>> agent = build_agent(model, tools)
             >>> response = await agent.process_message(
             ...     user_id="abc123",
-            ...     content="Remember that I prefer Python",
+            ...     content="What can you help me with?",
             ...     trace_id="trace_xyz"
             ... )
             >>> print(response)
-            "✅ I'll remember that. Stored: code_language_preference = Python"
+            "I can help you with..."
         """
         pass
 
@@ -191,8 +195,12 @@ class AgentCoreInterface(ABC):
 class SkillsEngineInterface(ABC):
     """Contract for Skills Engine.
 
-    This interface defines how the agent core interacts with the skills system.
-    Implemented by SkillsEngine in src/skills/executor.py (Story 3).
+    This interface defines how the agent interacts with the skills system.
+    Implemented by SkillsEngine in src/skills/executor.py.
+    
+    Note: With LangChain v1, skills should be converted to @tool decorated
+    functions. This interface remains for backward compatibility with the
+    subprocess-based skill execution model.
 
     Key responsibilities:
         - Execute skills by name
@@ -209,7 +217,7 @@ class SkillsEngineInterface(ABC):
 
         Args:
             skill_name: Skill identifier from SKILL.md (e.g., "file-ops", "memory")
-            args: Skill arguments from LLM tool call (e.g., {"path": "./data/memory/"})
+            args: Skill arguments from tool call (e.g., {"path": "./data/memory/"})
 
         Returns:
             SkillResult with success status and output
@@ -224,7 +232,7 @@ class SkillsEngineInterface(ABC):
             ...     args={"action": "list", "path": "./data/memory/"}
             ... )
             >>> print(result.success)  # True
-            >>> print(result.output)   # "SYSTEM_PROMPT.md\nCONVERSATION_HISTORY/\n..."
+            >>> print(result.output)   # "file1.txt\nfile2.txt\n..."
         """
         pass
 
@@ -238,114 +246,6 @@ class SkillsEngineInterface(ABC):
         Example:
             >>> skills = SkillsEngine(terminal_executor)
             >>> print(skills.list_skills())
-            ["file-ops", "memory-remember", "memory-recall"]
-        """
-        pass
-
-
-# ============================================================================
-# Memory Manager Interface
-# ============================================================================
-
-
-class MemoryManagerInterface(ABC):
-    """Contract for Memory Manager.
-
-    This interface defines how the agent core interacts with persistent memory.
-    Implemented by MemoryManager in src/core/memory.py (Story 3).
-
-    Key responsibilities:
-        - Read/write conversation history
-        - Read/write knowledge facts
-        - Sync to GCS (optional)
-    """
-
-    @abstractmethod
-    async def read_conversation_history(self, user_id: str, limit: int = 10) -> list[Message]:
-        """Read recent conversation history.
-
-        Returns the most recent conversation messages for context window.
-        Messages are returned in chronological order (oldest first).
-
-        Args:
-            user_id: Hashed user identifier
-            limit: Max messages to return (default 10 for context window)
-
-        Returns:
-            List of recent messages (oldest first)
-
-        Example:
-            >>> memory = MemoryManager()
-            >>> history = await memory.read_conversation_history("user123", limit=5)
-            >>> for msg in history:
-            ...     print(f"{msg.role}: {msg.content[:30]}...")
-            user: Remember that I prefer Pyt...
-            assistant: ✅ I'll remember that...
-        """
-        pass
-
-    @abstractmethod
-    async def write_conversation(
-        self, user_id: str, role: str, content: str, trace_id: str
-    ) -> None:
-        """Write a conversation message.
-
-        Appends message to conversation history file and optionally syncs to GCS.
-
-        Args:
-            user_id: Hashed user identifier
-            role: "user" or "assistant" (system messages handled separately)
-            content: Message content
-            trace_id: Request trace ID for debugging
-
-        Example:
-            >>> memory = MemoryManager()
-            >>> await memory.write_conversation(
-            ...     user_id="user123",
-            ...     role="user",
-            ...     content="What's my preferred language?",
-            ...     trace_id="trace_abc"
-            ... )
-        """
-        pass
-
-    @abstractmethod
-    async def read_fact(self, user_id: str, key: str) -> str | None:
-        """Read a fact from knowledge base.
-
-        Facts are persistent key-value pairs stored per user.
-
-        Args:
-            user_id: Hashed user identifier
-            key: Fact key (e.g., "code_language_preference")
-
-        Returns:
-            Fact value if exists, None otherwise
-
-        Example:
-            >>> memory = MemoryManager()
-            >>> preference = await memory.read_fact("user123", "code_language_preference")
-            >>> print(preference)  # "Python"
-        """
-        pass
-
-    @abstractmethod
-    async def write_fact(self, user_id: str, key: str, value: str) -> None:
-        """Write a fact to knowledge base.
-
-        Stores or updates a fact in the knowledge base file and optionally syncs to GCS.
-
-        Args:
-            user_id: Hashed user identifier
-            key: Fact key (e.g., "code_language_preference")
-            value: Fact value (e.g., "Python")
-
-        Example:
-            >>> memory = MemoryManager()
-            >>> await memory.write_fact(
-            ...     user_id="user123",
-            ...     key="code_language_preference",
-            ...     value="Python"
-            ... )
+            ["file-ops", "search-web", "post-content"]
         """
         pass

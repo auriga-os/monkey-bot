@@ -1,62 +1,54 @@
-"""Core agent components for Emonk.
+"""Core agent components.
 
-This module provides the main agent orchestration components including:
-- Agent Core (LangGraph orchestration)
-- LLM Client (Vertex AI wrapper)
-- Memory Manager (persistent storage)
-- Terminal Executor (secure command execution)
-- Shared interfaces for all components
+This package contains the core building blocks for monkey-bot:
+- build_agent: Factory for creating LangChain v1 agents
+- GCSStore: GCS-backed long-term memory
+- SessionSummaryMiddleware: Per-session memory persistence
+- TerminalExecutor: Secure command execution (legacy/optional)
 """
 
-# Import interfaces first (no dependencies)
+from .agent import build_agent, create_agent_with_mocks, AgentWrapper
 from .interfaces import (
     AgentCoreInterface,
     AgentError,
     EmonkError,
-    ExecutionResult,
     LLMError,
-    MemoryManagerInterface,
     Message,
     SecurityError,
     SkillError,
     SkillResult,
     SkillsEngineInterface,
+    ExecutionResult,
 )
+from .store import GCSStore, create_search_memory_tool
+from .middleware import SessionSummaryMiddleware
+from .terminal import ALLOWED_COMMANDS, ALLOWED_PATHS, TerminalExecutor
 
-# Import implementations (depend on interfaces)
-from .llm_client import LLMClient
-from .agent import AgentCore, create_agent_with_mocks
-
-# Story 3 components (if they exist)
-try:
-    from .terminal import TerminalExecutor
-    from .memory import MemoryManager
-    _story3_available = True
-except ImportError:
-    _story3_available = False
-
-# Build __all__ dynamically
 __all__ = [
-    # Story 2: Core classes
-    "AgentCore",
-    "LLMClient",
+    # Agent
+    "build_agent",
+    "AgentWrapper",
     "create_agent_with_mocks",
-    # Story 2: Interfaces
+    # Interfaces
     "AgentCoreInterface",
     "SkillsEngineInterface",
-    "MemoryManagerInterface",
-    # Story 2: Data classes
+    # Data classes
     "Message",
     "SkillResult",
     "ExecutionResult",
-    # Story 2: Exceptions
+    # Exceptions
     "EmonkError",
     "AgentError",
     "LLMError",
     "SkillError",
     "SecurityError",
+    # Store
+    "GCSStore",
+    "create_search_memory_tool",
+    # Middleware
+    "SessionSummaryMiddleware",
+    # Terminal (legacy/optional)
+    "TerminalExecutor",
+    "ALLOWED_COMMANDS",
+    "ALLOWED_PATHS",
 ]
-
-# Add Story 3 exports if available
-if _story3_available:
-    __all__.extend(["TerminalExecutor", "MemoryManager"])
