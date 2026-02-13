@@ -27,6 +27,7 @@ from langchain_google_vertexai import ChatVertexAI  # noqa: E402
 from langchain_core.tools import StructuredTool  # noqa: E402
 
 from src.core.agent import build_agent  # noqa: E402
+from src.core.deepagent import build_deep_agent  # noqa: E402
 from src.core.store import GCSStore, create_search_memory_tool  # noqa: E402
 from src.core.scheduler import create_storage  # noqa: E402
 from src.core.terminal import TerminalExecutor  # noqa: E402
@@ -171,6 +172,9 @@ def create_app():
     # Create Scheduler Storage Backend
     memory_dir = os.getenv("MEMORY_DIR", "./data/memory")
     scheduler_storage_type = os.getenv("SCHEDULER_STORAGE", "json")  # json or firestore
+    scheduler_storage = None
+    scheduler = None
+    
     if scheduler_storage_type == "firestore":
         scheduler_storage = create_storage("firestore", project_id=project_id)
         logger.info("✅ Scheduler storage: Firestore")
@@ -178,17 +182,45 @@ def create_app():
         scheduler_storage = create_storage("json", memory_dir=Path(memory_dir))
         logger.info("✅ Scheduler storage: JSON files")
     
-    # Build agent with LangChain v1 create_agent
-    agent = build_agent(
-        model=model,
-        tools=tools,
-        user_system_prompt="",  # Default, can be customized per-deployment
-        middleware=None,  # Uses default middleware (summarization + session summary)
-        checkpointer=None,  # Uses InMemorySaver by default
-        store=store,
-        scheduler_storage=scheduler_storage,
-    )
-    logger.info("✅ Agent built with create_agent")
+    # Create scheduler instance if storage is available
+    if scheduler_storage:
+        from src.core.scheduler import CronScheduler
+        scheduler = CronScheduler(
+            agent_state=store,
+            check_interval_seconds=10,
+            storage=scheduler_storage,
+        )
+    
+    # Try to build agent with build_deep_agent(), fall back to build_agent()
+    try:
+        # Check if skills directory exists
+        skills_list = None
+        if Path(skills_dir).exists():
+            skills_list = [skills_dir]
+            logger.info(f"✅ Skills directory found: {skills_dir}")
+        
+        agent = build_deep_agent(
+            model=model,
+            tools=tools,
+            system_prompt="",  # Default, can be customized per-deployment
+            skills=skills_list,
+            store=store,
+            scheduler=scheduler,
+        )
+        logger.info("✅ Agent built with build_deep_agent()")
+    except Exception as e:
+        logger.warning(f"⚠️  build_deep_agent() failed: {e}. Falling back to build_agent()")
+        # Fall back to old build_agent()
+        agent = build_agent(
+            model=model,
+            tools=tools,
+            user_system_prompt="",  # Default, can be customized per-deployment
+            middleware=None,  # Uses default middleware (summarization + session summary)
+            checkpointer=None,  # Uses InMemorySaver by default
+            store=store,
+            scheduler_storage=scheduler_storage,
+        )
+        logger.info("✅ Agent built with build_agent() (fallback)")
     
     # Note: Scheduler will be started by the application startup event
     # (see src/gateway/server.py for @app.on_event("startup"))

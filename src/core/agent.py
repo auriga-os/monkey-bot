@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import warnings
 from typing import Any, Optional
 
 from langchain.agents import create_agent
@@ -103,6 +104,9 @@ def build_agent(
 ):
     """Build a LangChain agent with monkey-bot's opinionated defaults.
     
+    .. deprecated::
+        Use build_deep_agent() from emonk.core.deepagent instead.
+    
     This is the main factory function for creating agents. It:
         - Composes a 3-layer system prompt (internal + base + user)
         - Configures default middleware (summarization + session summaries)
@@ -142,6 +146,12 @@ def build_agent(
         ...     "messages": [{"role": "user", "content": "Hello"}]
         ... }, config={"configurable": {"thread_id": "thread-123"}})
     """
+    warnings.warn(
+        "build_agent() is deprecated. Use build_deep_agent() from emonk.core.deepagent instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    
     # Compose system prompt from 3 layers
     full_prompt = compose_system_prompt(tools, user_system_prompt)
     
@@ -297,9 +307,16 @@ class AgentWrapper:
     async def stop_scheduler(self):
         """Stop the background scheduler."""
         if self._scheduler_task is not None:
+            # Set running flag to False
             await self.scheduler.stop()
+            
+            # Cancel the task immediately (don't wait for sleep to complete)
+            self._scheduler_task.cancel()
+            
+            # Wait for cancellation to complete
             with contextlib.suppress(asyncio.CancelledError):
                 await self._scheduler_task
+            
             self._scheduler_task = None
             logger.info("Scheduler stopped")
         else:

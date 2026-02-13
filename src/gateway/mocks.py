@@ -3,6 +3,7 @@ Mock implementations for Gateway testing.
 
 This module provides mock implementations that enable Sprint 1 parallel development:
 - MockAgentCore: Simple echo implementation for Gateway testing
+- MockScheduler: Simple mock scheduler for testing /cron/tick endpoint
 
 Real implementations will be wired in Story 4 (Integration).
 """
@@ -10,6 +11,35 @@ Real implementations will be wired in Story 4 (Integration).
 from __future__ import annotations
 
 import src.gateway.interfaces as interfaces
+
+
+class MockScheduler:
+    """
+    Mock Scheduler for Gateway testing.
+    
+    This mock implementation enables /cron/tick endpoint testing without
+    requiring a real scheduler backend.
+    
+    Behavior:
+        - run_tick() returns empty metrics (no jobs)
+        - Never raises exceptions (always succeeds)
+        - Useful for testing Gateway's cron endpoint handling
+    """
+    
+    async def run_tick(self) -> dict[str, int]:
+        """
+        Mock scheduler tick that returns empty metrics.
+        
+        Returns:
+            Dict with execution metrics (all zeros for mock)
+        """
+        return {
+            "jobs_checked": 0,
+            "jobs_due": 0,
+            "jobs_executed": 0,
+            "jobs_succeeded": 0,
+            "jobs_failed": 0,
+        }
 
 
 class MockAgentCore(interfaces.AgentCoreInterface):  # type: ignore[misc]
@@ -43,6 +73,10 @@ class MockAgentCore(interfaces.AgentCoreInterface):  # type: ignore[misc]
         >>> print(response)
         'Echo: Hello (trace: 550e8400-e29b-41d4-a716-446655440000)'
     """
+    
+    def __init__(self):
+        """Initialize MockAgentCore with mock scheduler."""
+        self.scheduler = MockScheduler()
 
     async def process_message(self, user_id: str, content: str, trace_id: str) -> str:
         """

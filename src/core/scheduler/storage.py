@@ -253,7 +253,9 @@ def create_storage(
     """
     if storage_type == "json":
         if not memory_dir:
-            raise ValueError("memory_dir required for JSON storage")
+            # Use temp directory if memory_dir not provided
+            import tempfile
+            memory_dir = Path(tempfile.gettempdir()) / "monkey_bot_scheduler"
         return JSONFileStorage(memory_dir)
     
     elif storage_type == "firestore":

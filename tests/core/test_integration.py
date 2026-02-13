@@ -149,9 +149,11 @@ async def test_error_in_agent_propagates() -> None:
         """Test tool."""
         return "test"
     
+    # Use empty middleware to avoid GCP initialization
     agent = build_agent(
         model=FailingModel(),
         tools=[test_tool],
+        middleware=[],  # Empty middleware to avoid GCP dependency
     )
     
     # Should raise AgentError

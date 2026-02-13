@@ -60,7 +60,8 @@ class CronScheduler:
         # Initialize storage backend
         if storage is None:
             # Default to JSON file storage for backward compatibility
-            self.storage = create_storage("json", memory_dir=agent_state.memory_dir)
+            memory_dir = agent_state.memory_dir if agent_state else None
+            self.storage = create_storage("json", memory_dir=memory_dir)
         else:
             self.storage = storage
         

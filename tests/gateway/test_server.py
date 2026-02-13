@@ -176,8 +176,8 @@ class TestWebhookEndpoint:
 
         # Mock Agent Core to return very long response
         long_response = "x" * 5000
-        with patch("src.gateway.server.agent_core") as mock_agent:
-            mock_agent.process_message = AsyncMock(return_value=long_response)
+        with patch("src.gateway.server.agent_core.process_message", new_callable=AsyncMock) as mock_process:
+            mock_process.return_value = long_response
 
             client = TestClient(app)
             response = client.post("/webhook", json=payload)

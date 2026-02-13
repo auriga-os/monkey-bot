@@ -254,9 +254,12 @@ class TestCreateStorage:
             assert isinstance(storage, FirestoreStorage)
     
     def test_create_json_without_memory_dir(self):
-        """Test that JSON storage requires memory_dir."""
-        with pytest.raises(ValueError, match="memory_dir required"):
-            create_storage("json")
+        """Test that JSON storage uses temp dir when memory_dir is None."""
+        storage = create_storage("json")
+        assert isinstance(storage, JSONFileStorage)
+        # Should have created storage with a temp directory
+        assert storage.memory_dir is not None
+        assert "monkey_bot_scheduler" in str(storage.memory_dir)
     
     def test_create_firestore_without_project_id(self):
         """Test that Firestore storage requires project_id."""
