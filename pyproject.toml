@@ -1,10 +1,10 @@
 [project]
 name = "emonk"
 version = "1.0.0"
-description = "Open-source framework for building single-purpose AI agents"
+description = "An opinionated agent framework built on LangChain Deep Agents — with pluggable cloud storage, sandbox execution, and a skills engine."
 requires-python = ">=3.11"
 authors = [
-    {name = "Auriga OS", email = "hello@auriga-os.com"}
+    {name = "ez-ai"}
 ]
 readme = "README.md"
 license = {text = "MIT"}
@@ -20,11 +20,11 @@ classifiers = [
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
+    "deepagents>=0.1.0",
     "langgraph>=0.2.0",
     "langchain-core>=0.3.0",
     "langchain-google-vertexai>=2.0.0",
     "google-cloud-aiplatform>=1.70.0",
-    "google-cloud-storage>=2.18.0",
     "google-auth>=2.35.0",
     "google-api-python-client>=2.150.0",
     "pydantic>=2.10.0",
@@ -33,6 +33,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+gcs = [
+    "google-cloud-storage>=2.18.0",
+]
+modal = [
+    "modal>=0.60.0",
+]
+all = [
+    "emonk[gcs]",
+    "emonk[modal]",
+]
 dev = [
     "pytest>=8.3.0",
     "pytest-asyncio>=0.24.0",
@@ -44,10 +54,10 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/auriga-os/emonk"
-Documentation = "https://github.com/auriga-os/emonk#readme"
-Repository = "https://github.com/auriga-os/emonk"
-Issues = "https://github.com/auriga-os/emonk/issues"
+Homepage = "https://github.com/ez-ai/monkey-bot"
+Documentation = "https://github.com/ez-ai/monkey-bot#readme"
+Repository = "https://github.com/ez-ai/monkey-bot"
+Issues = "https://github.com/ez-ai/monkey-bot/issues"
 
 [build-system]
 requires = ["setuptools>=68.0.0", "wheel"]

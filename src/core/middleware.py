@@ -9,10 +9,15 @@ import logging
 from datetime import datetime
 from typing import Any, Optional
 
-from langchain.agents.middleware import AgentMiddleware
 from langchain_core.language_models import BaseChatModel
 from langchain.chat_models import init_chat_model
 from langgraph.store.base import BaseStore
+
+# Try to import from deepagents first, fall back to langchain
+try:
+    from deepagents.middleware import AgentMiddleware
+except ImportError:
+    from langchain.agents.middleware import AgentMiddleware
 
 logger = logging.getLogger(__name__)
 

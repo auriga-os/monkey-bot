@@ -159,11 +159,27 @@ async def webhook(payload: GoogleChatWebhook) -> GoogleChatResponse:
 
     # Call Agent Core to process message
     try:
-        response_text = await agent_core.process_message(
-            user_id=filtered["user_id"],
-            content=filtered["content"],
-            trace_id=trace_id,
-        )
+        # Try new agent.invoke() API first
+        if hasattr(agent_core, 'invoke'):
+            result = await agent_core.invoke(
+                inputs={"messages": [{"role": "user", "content": filtered["content"]}]},
+                config={
+                    "configurable": {
+                        "thread_id": filtered["user_id"],
+                        "user_id": filtered["user_id"],
+                    }
+                },
+            )
+            # Extract response from result
+            response_message = result["messages"][-1]
+            response_text = response_message.content if hasattr(response_message, "content") else str(response_message)
+        else:
+            # Fall back to old process_message() API
+            response_text = await agent_core.process_message(
+                user_id=filtered["user_id"],
+                content=filtered["content"],
+                trace_id=trace_id,
+            )
     except AgentError as e:
         log_structured(
             "ERROR",

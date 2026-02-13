@@ -1,13 +1,15 @@
 """Core agent components.
 
 This package contains the core building blocks for monkey-bot:
-- build_agent: Factory for creating LangChain v1 agents
+- build_deep_agent: Factory for creating deep agents (recommended)
+- build_agent: Factory for creating LangChain v1 agents (deprecated)
 - GCSStore: GCS-backed long-term memory
 - SessionSummaryMiddleware: Per-session memory persistence
 - TerminalExecutor: Secure command execution (legacy/optional)
 """
 
 from .agent import build_agent, create_agent_with_mocks, AgentWrapper
+from .deepagent import build_deep_agent
 from .interfaces import (
     AgentCoreInterface,
     AgentError,
@@ -26,6 +28,7 @@ from .terminal import ALLOWED_COMMANDS, ALLOWED_PATHS, TerminalExecutor
 
 __all__ = [
     # Agent
+    "build_deep_agent",
     "build_agent",
     "AgentWrapper",
     "create_agent_with_mocks",

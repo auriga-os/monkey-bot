@@ -85,12 +85,46 @@ class TestSkillsIntegration:
         assert "test content" in result.stdout
 
 
-@pytest.mark.skip(reason="Skill execution needs update for LangChain @tool pattern")
 class TestSkillExecution:
-    """Tests for executing real skills (pending updates for LangChain v1)."""
+    """Tests for executing real skills."""
     
     @pytest.mark.asyncio
     async def test_execute_file_ops_skill(self, skills_engine, test_data_dir):
         """Test executing file-ops skill."""
-        # This test is skipped pending conversion of skills to @tool functions
-        pass
+        # Create a test file
+        test_file = test_data_dir / "data" / "memory" / "test_skill.txt"
+        test_content = "Hello from file-ops skill!"
+        test_file.write_text(test_content)
+        
+        # Test read operation
+        result = await skills_engine.execute_skill(
+            "file-ops",
+            {"action": "read", "path": str(test_file)}
+        )
+        
+        assert result.success is True
+        assert test_content in result.output
+        assert result.error is None or result.error == ""
+        
+        # Test write operation
+        new_content = "Updated content from skill test"
+        result = await skills_engine.execute_skill(
+            "file-ops",
+            {"action": "write", "path": str(test_file), "content": new_content}
+        )
+        
+        assert result.success is True
+        assert "Wrote" in result.output
+        assert str(len(new_content)) in result.output
+        
+        # Verify the file was actually written
+        assert test_file.read_text() == new_content
+        
+        # Test list operation
+        result = await skills_engine.execute_skill(
+            "file-ops",
+            {"action": "list", "path": str(test_file.parent)}
+        )
+        
+        assert result.success is True
+        assert "test_skill.txt" in result.output
