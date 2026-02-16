@@ -1,7 +1,7 @@
 """System prompt composition for monkey-bot deep agents.
 
 Implements a 3-layer prompt architecture:
-- Layer 1 (Internal): Skills manifest, memory/scheduler/sandbox instructions
+- Layer 1 (Internal): Skills manifest, memory/scheduler/backend instructions
 - Layer 2 (Base): Framework personality and capabilities
 - Layer 3 (User): Custom system prompt from framework consumer
 """
@@ -60,7 +60,7 @@ def compose_system_prompt(
     user_system_prompt: str = "",
     has_scheduler: bool = False,
     has_memory: bool = False,
-    has_sandbox: bool = False,
+    has_backend: bool = False,
 ) -> str:
     """Compose the 3-layer system prompt.
 
@@ -69,7 +69,7 @@ def compose_system_prompt(
         user_system_prompt: Optional custom system prompt from framework consumer
         has_scheduler: Whether scheduler is enabled (adds scheduling instructions)
         has_memory: Whether memory/store is enabled (adds memory instructions)
-        has_sandbox: Whether sandbox execution is enabled (adds shell instructions)
+        has_backend: Whether backend is enabled (adds shell execution instructions if supported)
 
     Returns:
         Complete system prompt combining all 3 layers
@@ -90,11 +90,11 @@ def compose_system_prompt(
         skills_manifest=skills_manifest or "No skills available.",
         memory_section=MEMORY_SECTION if has_memory else "",
         scheduler_section=SCHEDULER_SECTION if has_scheduler else "",
-        sandbox_section=SANDBOX_SECTION if has_sandbox else "",
+        sandbox_section=SANDBOX_SECTION if has_backend else "",
     )
 
     # Build Layer 2
-    sandbox_line = "- Shell execution (execute) in an isolated sandbox" if has_sandbox else ""
+    sandbox_line = "- Shell execution (execute) in an isolated sandbox" if has_backend else ""
     memory_line = "- Memory (persistent storage in /memory/)" if has_memory else ""
     scheduler_line = "- Scheduling (schedule_task for recurring jobs)" if has_scheduler else ""
 

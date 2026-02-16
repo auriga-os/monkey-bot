@@ -23,7 +23,6 @@ try:
     from deepagents import create_deep_agent
     from deepagents.backends.protocol import BackendProtocol, SandboxBackendProtocol
     from deepagents.middleware.subagents import SubAgentMiddleware
-    from deepagents.middleware.summarization import SummarizationMiddleware
 
     _DEEPAGENTS_AVAILABLE = True
 except ImportError:
@@ -40,7 +39,6 @@ def build_deep_agent(
     skills: list[str] | None = None,
     memory: list[str] | None = None,
     backend: object | None = None,
-    sandbox: object | None = None,
     store: BaseStore | None = None,
     scheduler: object | None = None,
     subagents: list[dict] | None = None,
@@ -55,7 +53,7 @@ def build_deep_agent(
     - Skills manifest generation from SKILL.md files
     - Auto-adding scheduler and memory tools
     - Middleware configuration (summarization, subagents)
-    - Backend and sandbox setup
+    - Backend setup
 
     Args:
         model: LLM model name (e.g., "gemini-2.5-flash") or BaseChatModel instance
@@ -63,8 +61,7 @@ def build_deep_agent(
         system_prompt: User's custom system prompt (Layer 3)
         skills: List of skill directory paths to load (e.g., ["./skills/", "/shared/skills/"])
         memory: List of memory directory paths (e.g., ["/memory/"])
-        backend: Backend protocol implementation for filesystem operations
-        sandbox: Sandbox backend protocol for shell execution
+        backend: Backend protocol implementation (BackendProtocol or SandboxBackendProtocol)
         store: LangGraph Store for long-term memory (enables search_memory tool)
         scheduler: Scheduler instance (enables schedule_task tool)
         subagents: List of subagent configs for SubAgentMiddleware
@@ -133,7 +130,7 @@ def build_deep_agent(
         user_system_prompt=system_prompt,
         has_scheduler=scheduler is not None,
         has_memory=store is not None,
-        has_sandbox=sandbox is not None,
+        has_backend=backend is not None,
     )
 
     logger.info(
@@ -142,7 +139,7 @@ def build_deep_agent(
             "component": "deepagent",
             "has_scheduler": scheduler is not None,
             "has_memory": store is not None,
-            "has_sandbox": sandbox is not None,
+            "has_backend": backend is not None,
             "num_skills": len(skills) if skills else 0,
         }
     )
@@ -150,15 +147,10 @@ def build_deep_agent(
     # Step 4: Configure middleware
     middleware = []
 
-    # Add summarization middleware
-    summarization_mw = SummarizationMiddleware(
-        trigger=summarization_trigger,
-        keep=summarization_keep,
-    )
-    middleware.append(summarization_mw)
-    logger.info(
-        f"Added SummarizationMiddleware: trigger={summarization_trigger}, keep={summarization_keep}"
-    )
+    # Note: SummarizationMiddleware is added by default by create_deep_agent,
+    # so we don't need to add it manually. The summarization_trigger and
+    # summarization_keep parameters are not currently configurable via
+    # create_deep_agent API, so we accept them but don't use them for now.
 
     # Add subagent middleware if subagents provided
     if subagents:
@@ -173,7 +165,6 @@ def build_deep_agent(
         system_prompt=full_system_prompt,
         middleware=middleware,
         backend=backend,
-        sandbox=sandbox,
         store=store,
     )
 
