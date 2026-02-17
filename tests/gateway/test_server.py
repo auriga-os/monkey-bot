@@ -23,6 +23,7 @@ class TestWebhookEndpoint:
     def allowed_users_env(self) -> None:
         """Set ALLOWED_USERS env var for tests."""
         os.environ["ALLOWED_USERS"] = "user@example.com,admin@example.com"
+        os.environ["GOOGLE_CHAT_FORMAT"] = "legacy"  # Use legacy format for compatibility
 
     def test_webhook_success(self, allowed_users_env: None) -> None:
         """Test successful webhook processing with allowed user."""

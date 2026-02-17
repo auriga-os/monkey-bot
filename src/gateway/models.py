@@ -98,14 +98,16 @@ class GoogleChatWebhook(BaseModel):
 
 class GoogleChatResponse(BaseModel):
     """
-    Google Chat response (Cards V2 format).
+    Google Chat response (Cards V2 format) - Legacy format.
 
-    This is the response we send back to Google Chat. The simplest Cards V2
+    This is the legacy response format for Google Chat. The simplest Cards V2
     format is just {"text": "response"}. More complex cards (buttons, images)
     can be added in future phases.
 
     Google Chat has a 4096 character limit for Cards V2 text.
     Gateway truncates at 4000 to leave room for formatting.
+    
+    Note: For new deployments, use GoogleChatWorkspaceResponse instead.
     """
 
     text: str = Field(
@@ -126,6 +128,73 @@ class GoogleChatResponse(BaseModel):
         if len(v) > 4000:
             raise ValueError("Response text exceeds 4000 character limit for Google Chat")
         return v
+
+
+class GoogleChatWorkspaceResponse(BaseModel):
+    """
+    Google Chat Workspace Add-on response format (modern format).
+
+    This is the modern format required for Google Workspace Add-ons.
+    It uses a nested structure for better integration with Workspace apps.
+
+    Example JSON:
+        {
+            "hostAppDataAction": {
+                "chatDataAction": {
+                    "createMessageAction": {
+                        "message": {"text": "Response text"}
+                    }
+                }
+            }
+        }
+    """
+
+    class CreateMessageAction(BaseModel):
+        """Message creation action."""
+        message: dict[str, str] = Field(
+            ...,
+            description="Message to create",
+            examples=[{"text": "Hello from bot"}]
+        )
+
+    class ChatDataAction(BaseModel):
+        """Chat data action wrapper."""
+        createMessageAction: "GoogleChatWorkspaceResponse.CreateMessageAction"
+
+    class HostAppDataAction(BaseModel):
+        """Host app data action wrapper."""
+        chatDataAction: "GoogleChatWorkspaceResponse.ChatDataAction"
+
+    hostAppDataAction: HostAppDataAction
+
+    @classmethod
+    def from_text(cls, text: str) -> "GoogleChatWorkspaceResponse":
+        """Convenience constructor from plain text.
+
+        Args:
+            text: Response text to send (will be truncated to 4000 chars)
+
+        Returns:
+            GoogleChatWorkspaceResponse instance
+
+        Example:
+            >>> response = GoogleChatWorkspaceResponse.from_text("Hello!")
+            >>> response.hostAppDataAction.chatDataAction.createMessageAction.message
+            {"text": "Hello!"}
+        """
+        # Validate length
+        if len(text) > 4000:
+            raise ValueError("Response text exceeds 4000 character limit for Google Chat")
+        
+        return cls(
+            hostAppDataAction=cls.HostAppDataAction(
+                chatDataAction=cls.ChatDataAction(
+                    createMessageAction=cls.CreateMessageAction(
+                        message={"text": text}
+                    )
+                )
+            )
+        )
 
 
 class HealthCheckResponse(BaseModel):

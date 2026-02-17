@@ -27,8 +27,11 @@ Everything is optional and pluggable. The framework works with zero cloud depend
 - 🎯 **Simple Skill System** — Add custom skills via SKILL.md + Python entry points
 - 💾 **Persistent Memory** — GCS-backed LangGraph Store with keyword search
 - ⏰ **Cloud Scheduler-Ready Jobs** — `/cron/tick` endpoint with metrics and Firestore locking
+- 🔧 **Multi-Provider Model Support** — Google Vertex AI, OpenAI, Anthropic (easy switching)
+- ⚙️ **Centralized Config Management** — Load secrets from GCP Secret Manager or `.env`
+- 📋 **Job Handler Pattern** — Standardized registration for scheduled task handlers
+- 💬 **Modern Google Chat Format** — Workspace Add-on support (+ legacy fallback)
 - 🔒 **Secure Execution** — Allowlist-based command/path validation (optional)
-- 💬 **Google Chat Integration** — Interact via Google Chat webhooks with PII filtering
 - 📦 **Pluggable Backends** — Bring your own storage, sandbox, or LLM
 - 📊 **Structured Logging** — JSON logs with trace IDs
 
@@ -36,11 +39,35 @@ Everything is optional and pluggable. The framework works with zero cloud depend
 
 ## Quick Start
 
+### Using Config Module (Recommended)
+
+```python
+from emonk import build_agent
+from emonk.core.config import get_model, load_secrets
+
+# Load secrets (from .env in dev, Secret Manager in prod)
+load_secrets()
+
+# Get configured model (provider set via MODEL_PROVIDER env var)
+model = get_model()
+
+# Build agent
+agent = build_agent(model=model, tools=[])
+
+# Invoke
+result = agent.invoke({
+    "messages": [{"role": "user", "content": "Hello!"}]
+})
+print(result["messages"][-1].content)
+```
+
+### Manual Configuration (Advanced)
+
 ```python
 from emonk import build_agent
 from langchain_google_vertexai import ChatVertexAI
 
-# Minimal agent — works with no cloud dependencies
+# Explicit model configuration
 model = ChatVertexAI(model="gemini-2.5-flash")
 agent = build_agent(model=model, tools=[])
 
@@ -106,16 +133,48 @@ pip install emonk[all]
 
 ---
 
+## Configuration
+
+monkey-bot uses environment variables for configuration. See [`.env.example`](.env.example) for all available options.
+
+### Key Configuration Variables
+
+```bash
+# Model provider (google_vertexai | openai | anthropic)
+MODEL_PROVIDER=google_vertexai
+
+# Model name (provider-specific)
+MODEL_NAME=gemini-2.5-flash
+
+# Generation temperature (0.0-1.0)
+MODEL_TEMPERATURE=0.7
+
+# GCP Project ID (for Vertex AI)
+VERTEX_AI_PROJECT_ID=your-gcp-project-id
+
+# Scheduler storage (json | firestore)
+SCHEDULER_STORAGE=json
+
+# Google Chat response format (workspace_addon | legacy)
+GOOGLE_CHAT_FORMAT=workspace_addon
+```
+
+**For full configuration reference:** See [`.env.example`](.env.example)
+
+**For deployment instructions:** See [`docs/deployment.md`](docs/deployment.md)
+
+---
+
 ## Usage Examples
 
 ### Basic Agent
 
 ```python
 from emonk import build_agent
-from langchain_google_vertexai import ChatVertexAI
+from emonk.core.config import get_model
 
-# Create agent with just a model
-model = ChatVertexAI(model="gemini-2.5-flash")
+# Create agent using config module
+model = get_model()
 agent = build_agent(model=model, tools=[])
 
 # Invoke the agent
@@ -241,15 +300,28 @@ for item in results:
 
 ```python
 from emonk.core.scheduler import CronScheduler
-from datetime import datetime, timedelta
+from emonk.core.scheduler.handlers import register_handler
+from datetime import datetime, timezone, timedelta
 
 # Create scheduler
 scheduler = CronScheduler(agent_state=agent_state)
 
+# Define job handler
+async def handle_reminder(job: dict):
+    """Handle reminder job execution."""
+    print(f"Sending reminder: {job['payload']['message']}")
+    # Your reminder logic here
+
+# Register handler (NEW: standardized pattern)
+register_handler(scheduler, "send_reminder", handle_reminder)
+
+# Or use convenience method
+scheduler.register_handler("send_reminder", handle_reminder)
+
 # Schedule a job
 job_id = await scheduler.schedule_job(
     job_type="send_reminder",
-    schedule_at=datetime.utcnow() + timedelta(hours=1),
+    schedule_at=datetime.now(timezone.utc) + timedelta(hours=1),
     payload={
         "user_id": "user123",
         "message": "Don't forget to review the PR!"
@@ -701,6 +773,9 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ## Support
 
+- **Deployment Guide**: [docs/deployment.md](docs/deployment.md)
+- **Configuration Reference**: [.env.example](.env.example)
+- **Example Skills**: [examples/skills/diagnostics/](examples/skills/diagnostics/)
 - **Issues**: [GitHub Issues](https://github.com/ez-ai/monkey-bot/issues)
 - **Documentation**: [GitHub Wiki](https://github.com/ez-ai/monkey-bot/wiki)
 - **Community**: [GitHub Discussions](https://github.com/ez-ai/monkey-bot/discussions)

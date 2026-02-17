@@ -298,7 +298,7 @@ def _create_schedule_task_tool(scheduler) -> BaseTool:
     Returns:
         LangChain tool function
     """
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     from langchain_core.tools import tool
 
@@ -331,6 +331,13 @@ def _create_schedule_task_tool(scheduler) -> BaseTool:
         """
         try:
             schedule_at = datetime.fromisoformat(schedule_at_iso.replace("Z", "+00:00"))
+            # Ensure timezone-aware datetime
+            if schedule_at.tzinfo is None:
+                schedule_at = schedule_at.replace(tzinfo=timezone.utc)
+                logger.warning(
+                    f"Received timezone-naive datetime '{schedule_at_iso}', "
+                    f"assuming UTC: {schedule_at.isoformat()}"
+                )
         except ValueError as e:
             return f"Error: Invalid ISO 8601 datetime format: {e}"
 

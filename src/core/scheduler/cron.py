@@ -7,7 +7,7 @@ at specified times. Jobs are persisted to disk and survive agent restarts.
 import asyncio
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 
@@ -100,7 +100,7 @@ class CronScheduler:
             "schedule_at": schedule_at.isoformat(),
             "payload": payload,
             "status": "pending",
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
             "attempts": 0,
             "max_attempts": 3
         }
@@ -146,7 +146,7 @@ class CronScheduler:
         # Reload jobs from storage to get latest state
         await self._load_jobs()
         
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         metrics = {
             "jobs_checked": len(self.jobs),
             "jobs_due": 0,
@@ -161,6 +161,12 @@ class CronScheduler:
                 continue
                 
             schedule_at = datetime.fromisoformat(job["schedule_at"])
+            # Ensure timezone-aware for comparison
+            if schedule_at.tzinfo is None:
+                schedule_at = schedule_at.replace(tzinfo=timezone.utc)
+                logger.warning(
+                    f"Job {job['id']} had timezone-naive schedule_at, assuming UTC: {schedule_at}"
+                )
             
             if schedule_at <= now:
                 metrics["jobs_due"] += 1
@@ -253,13 +259,16 @@ class CronScheduler:
 
     async def _check_and_execute_jobs(self):
         """Check for due jobs and execute them."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         for job in self.jobs:
             if job["status"] != "pending":
                 continue
 
             schedule_at = datetime.fromisoformat(job["schedule_at"])
+            # Ensure timezone-aware for comparison
+            if schedule_at.tzinfo is None:
+                schedule_at = schedule_at.replace(tzinfo=timezone.utc)
 
             if schedule_at <= now:
                 await self._execute_job(job)
@@ -277,7 +286,7 @@ class CronScheduler:
 
         try:
             job["status"] = "running"
-            job["started_at"] = datetime.utcnow().isoformat()
+            job["started_at"] = datetime.now(timezone.utc).isoformat()
             await self._save_jobs()
 
             # Look up handler from registry
@@ -289,15 +298,20 @@ class CronScheduler:
             job["_agent_state"] = self.agent_state
 
             try:
-                # Execute the handler
-                await handler(job)
+                # Execute the handler with JobHandler interface if available
+                if hasattr(handler, 'handle'):
+                    # JobHandler instance
+                    await handler.handle(job)
+                else:
+                    # Direct callable (backward compatibility)
+                    await handler(job)
             finally:
                 # Always clean up agent state from job dict (even on error)
                 job.pop("_agent_state", None)
 
             # Mark as completed
             job["status"] = "completed"
-            job["completed_at"] = datetime.utcnow().isoformat()
+            job["completed_at"] = datetime.now(timezone.utc).isoformat()
 
             logger.info(f"Job {job_id} completed successfully")
 
@@ -310,7 +324,7 @@ class CronScheduler:
                 job["error"] = str(e)
             else:
                 # Retry later (reschedule for 5 minutes from now)
-                retry_at = datetime.utcnow() + timedelta(minutes=5)
+                retry_at = datetime.now(timezone.utc) + timedelta(minutes=5)
                 job["schedule_at"] = retry_at.isoformat()
                 job["status"] = "pending"
                 logger.info(f"Job {job_id} will retry at {retry_at}")

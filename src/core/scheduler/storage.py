@@ -7,7 +7,7 @@ backend implementations (JSON files, Firestore, etc.).
 import json
 import logging
 from abc import ABC, abstractmethod
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -182,12 +182,18 @@ class FirestoreStorage(JobStorage):
                     return False
                 
                 job_data = snapshot.to_dict()
-                now = datetime.utcnow()
+                now = datetime.now(timezone.utc)
                 
                 # Check if job has an active lease
                 lease_until = job_data.get("lease_until")
                 if lease_until:
                     lease_expiry = datetime.fromisoformat(lease_until)
+                    # Ensure timezone-aware for comparison
+                    if lease_expiry.tzinfo is None:
+                        lease_expiry = lease_expiry.replace(tzinfo=timezone.utc)
+                        logger.warning(
+                            f"Job {job_id} had timezone-naive lease_until, assuming UTC"
+                        )
                     if lease_expiry > now:
                         logger.info(
                             f"Job {job_id} already claimed until {lease_until}"

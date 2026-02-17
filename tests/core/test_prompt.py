@@ -78,7 +78,7 @@ class TestComposeSystemPrompt:
     
     def test_with_sandbox_enabled(self):
         """Test prompt composition with sandbox enabled."""
-        prompt = compose_system_prompt(has_sandbox=True)
+        prompt = compose_system_prompt(has_backend=True)
         
         # Layer 1 should include sandbox section
         assert "## Shell Execution" in prompt
@@ -98,7 +98,7 @@ class TestComposeSystemPrompt:
             user_system_prompt=user_prompt,
             has_scheduler=True,
             has_memory=True,
-            has_sandbox=True,
+            has_backend=True,
         )
         
         # Check all layers present
@@ -165,7 +165,7 @@ class TestComposeSystemPrompt:
         assert "## Shell Execution" not in prompt2
         
         # Only sandbox
-        prompt3 = compose_system_prompt(has_sandbox=True)
+        prompt3 = compose_system_prompt(has_backend=True)
         assert "## Shell Execution" in prompt3
         assert "## Memory Management" not in prompt3
         assert "## Job Scheduling" not in prompt3
