@@ -21,7 +21,13 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 
 from src.gateway.interfaces import AgentCoreInterface, AgentError
-from src.gateway.models import CronTickResponse, GoogleChatResponse, GoogleChatWebhook, HealthCheckResponse
+from src.gateway.models import (
+    CronTickResponse,
+    GoogleChatResponse,
+    GoogleChatWebhook,
+    GoogleChatWorkspaceResponse,
+    HealthCheckResponse,
+)
 from src.gateway.mocks import MockAgentCore
 from src.gateway.pii_filter import filter_google_chat_pii
 
@@ -85,8 +91,8 @@ def truncate_response(text: str, max_length: int = 4000) -> str:
     return text[:truncate_at] + truncation_message
 
 
-@app.post("/webhook", response_model=GoogleChatResponse, status_code=status.HTTP_200_OK)
-async def webhook(payload: GoogleChatWebhook) -> GoogleChatResponse:
+@app.post("/webhook", status_code=status.HTTP_200_OK)
+async def webhook(payload: GoogleChatWebhook):
     """
     Handle Google Chat webhook.
 
@@ -213,8 +219,14 @@ async def webhook(payload: GoogleChatWebhook) -> GoogleChatResponse:
         response_length=len(response_text),
     )
 
-    # Return response in Google Chat Cards V2 format
-    return GoogleChatResponse(text=response_text)
+    # Return response in appropriate format based on GOOGLE_CHAT_FORMAT env var
+    chat_format = os.getenv("GOOGLE_CHAT_FORMAT", "workspace_addon")
+    
+    if chat_format == "workspace_addon":
+        return GoogleChatWorkspaceResponse.from_text(response_text)
+    else:
+        # Legacy format for backward compatibility
+        return GoogleChatResponse(text=response_text)
 
 
 @app.post("/cron/tick", response_model=CronTickResponse, status_code=status.HTTP_200_OK)

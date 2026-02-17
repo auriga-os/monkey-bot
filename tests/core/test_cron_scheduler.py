@@ -3,7 +3,7 @@
 import asyncio
 import json
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 import sys
@@ -40,7 +40,7 @@ class TestCronScheduler:
     @pytest.mark.asyncio
     async def test_schedule_job(self, scheduler):
         """Test: Schedule a job for future execution."""
-        schedule_at = datetime.utcnow() + timedelta(seconds=5)
+        schedule_at = datetime.now(timezone.utc) + timedelta(seconds=5)
         job_id = await scheduler.schedule_job(
             job_type="post_content",
             schedule_at=schedule_at,
@@ -56,7 +56,7 @@ class TestCronScheduler:
     @pytest.mark.asyncio
     async def test_schedule_job_creates_file(self, scheduler, mock_agent_state):
         """Test: Scheduling a job persists to disk."""
-        schedule_at = datetime.utcnow() + timedelta(seconds=5)
+        schedule_at = datetime.now(timezone.utc) + timedelta(seconds=5)
         await scheduler.schedule_job(
             job_type="post_content",
             schedule_at=schedule_at,
@@ -75,7 +75,7 @@ class TestCronScheduler:
     async def test_get_pending_jobs(self, scheduler):
         """Test: Get all pending jobs."""
         # Schedule 3 jobs
-        schedule_at = datetime.utcnow() + timedelta(seconds=5)
+        schedule_at = datetime.now(timezone.utc) + timedelta(seconds=5)
         await scheduler.schedule_job(
             job_type="post_content",
             schedule_at=schedule_at,
@@ -97,7 +97,7 @@ class TestCronScheduler:
     @pytest.mark.asyncio
     async def test_get_job_by_id(self, scheduler):
         """Test: Get job by ID."""
-        schedule_at = datetime.utcnow() + timedelta(seconds=5)
+        schedule_at = datetime.now(timezone.utc) + timedelta(seconds=5)
         job_id = await scheduler.schedule_job(
             job_type="post_content",
             schedule_at=schedule_at,
@@ -128,7 +128,7 @@ class TestCronScheduler:
         scheduler.register_handler("post_content", mock_handler)
         
         # Schedule job for 1 second from now
-        schedule_at = datetime.utcnow() + timedelta(seconds=1)
+        schedule_at = datetime.now(timezone.utc) + timedelta(seconds=1)
         job_id = await scheduler.schedule_job(
             job_type="post_content",
             schedule_at=schedule_at,
@@ -157,7 +157,7 @@ class TestCronScheduler:
     @pytest.mark.asyncio
     async def test_job_retry_on_failure(self, scheduler):
         """Test: Failed jobs are retried."""
-        schedule_at = datetime.utcnow()
+        schedule_at = datetime.now(timezone.utc)
         job_id = await scheduler.schedule_job(
             job_type="post_content",
             schedule_at=schedule_at,
@@ -180,12 +180,12 @@ class TestCronScheduler:
         assert job["status"] == "pending"  # Rescheduled for retry
         
         new_schedule = datetime.fromisoformat(job["schedule_at"])
-        assert new_schedule > datetime.utcnow()
+        assert new_schedule > datetime.now(timezone.utc)
 
     @pytest.mark.asyncio
     async def test_job_fails_after_max_attempts(self, scheduler):
         """Test: Jobs fail permanently after max attempts."""
-        schedule_at = datetime.utcnow()
+        schedule_at = datetime.now(timezone.utc)
         job_id = await scheduler.schedule_job(
             job_type="post_content",
             schedule_at=schedule_at,
@@ -214,7 +214,7 @@ class TestCronScheduler:
     async def test_job_persistence_across_restarts(self, scheduler, mock_agent_state):
         """Test: Jobs are saved to disk and reloaded."""
         # Create first scheduler and schedule job
-        schedule_at = datetime.utcnow() + timedelta(hours=1)
+        schedule_at = datetime.now(timezone.utc) + timedelta(hours=1)
         job_id = await scheduler.schedule_job(
             job_type="post_content",
             schedule_at=schedule_at,
@@ -257,7 +257,7 @@ class TestCronScheduler:
     @pytest.mark.asyncio
     async def test_unknown_job_type_fails_job(self, scheduler):
         """Test: Unknown job type marks job as failed."""
-        schedule_at = datetime.utcnow()
+        schedule_at = datetime.now(timezone.utc)
         job_id = await scheduler.schedule_job(
             job_type="unknown_type",
             schedule_at=schedule_at,
