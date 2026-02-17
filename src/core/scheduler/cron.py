@@ -108,13 +108,14 @@ class CronScheduler:
         self.jobs.append(job)
         await self._save_jobs()
 
+        # Calculate time until execution for logging
+        now_utc = datetime.now(timezone.utc)
+        time_until = schedule_at - now_utc
+        
         logger.info(
-            "Job scheduled",
-            extra={
-                "job_id": job_id,
-                "job_type": job_type,
-                "schedule_at": schedule_at.isoformat()
-            }
+            f"Job scheduled: id={job_id}, type={job_type}, "
+            f"schedule_at={schedule_at.isoformat()}, "
+            f"time_until={time_until.total_seconds():.1f}s"
         )
 
         return job_id
@@ -141,10 +142,12 @@ class CronScheduler:
             >>> result = await scheduler.run_tick()
             >>> print(f"Executed {result['jobs_executed']} jobs")
         """
-        logger.info("Running scheduler tick")
+        now = datetime.now(timezone.utc)
+        logger.info(f"Running scheduler tick at {now.isoformat()}")
         
         # Reload jobs from storage to get latest state
         await self._load_jobs()
+        logger.info(f"Loaded {len(self.jobs)} total jobs from storage")
         
         now = datetime.now(timezone.utc)
         metrics = {
@@ -157,7 +160,14 @@ class CronScheduler:
         
         # Check each job
         for job in self.jobs:
+            job_id = job.get("id", "unknown")
+            job_type = job.get("job_type", "unknown")
+            job_status = job.get("status", "unknown")
+            
+            logger.info(f"Checking job {job_id} (type: {job_type}, status: {job_status})")
+            
             if job["status"] != "pending":
+                logger.info(f"Skipping job {job_id} - status is {job_status}, not pending")
                 continue
                 
             schedule_at = datetime.fromisoformat(job["schedule_at"])
@@ -167,6 +177,12 @@ class CronScheduler:
                 logger.warning(
                     f"Job {job['id']} had timezone-naive schedule_at, assuming UTC: {schedule_at}"
                 )
+            
+            logger.info(
+                f"Job {job_id} scheduled for {schedule_at.isoformat()}, "
+                f"now is {now.isoformat()}, "
+                f"due: {schedule_at <= now}"
+            )
             
             if schedule_at <= now:
                 metrics["jobs_due"] += 1
@@ -195,14 +211,9 @@ class CronScheduler:
                     await self.storage.release_job(job_id)
         
         logger.info(
-            "Scheduler tick completed",
-            extra={
-                "jobs_checked": metrics["jobs_checked"],
-                "jobs_due": metrics["jobs_due"],
-                "jobs_executed": metrics["jobs_executed"],
-                "jobs_succeeded": metrics["jobs_succeeded"],
-                "jobs_failed": metrics["jobs_failed"],
-            }
+            f"Scheduler tick completed: checked={metrics['jobs_checked']}, "
+            f"due={metrics['jobs_due']}, executed={metrics['jobs_executed']}, "
+            f"succeeded={metrics['jobs_succeeded']}, failed={metrics['jobs_failed']}"
         )
         
         return metrics
@@ -281,8 +292,9 @@ class CronScheduler:
         """
         job_id = job["id"]
         job_type = job["job_type"]
+        schedule_at = job.get("schedule_at", "unknown")
 
-        logger.info(f"Executing job {job_id} (type: {job_type})")
+        logger.info(f"Executing job {job_id} (type: {job_type}, scheduled_for: {schedule_at})")
 
         try:
             job["status"] = "running"
@@ -293,6 +305,8 @@ class CronScheduler:
             handler = self._job_handlers.get(job_type)
             if not handler:
                 raise ValueError(f"No handler registered for job type: {job_type}")
+
+            logger.info(f"Job {job_id}: invoking handler for '{job_type}'")
 
             # Inject agent state into job context for handlers to use
             job["_agent_state"] = self.agent_state
@@ -364,3 +378,50 @@ class CronScheduler:
             if job["id"] == job_id:
                 return job
         return None
+
+    async def get_jobs_debug_info(self) -> list[dict[str, Any]]:
+        """Get all jobs with debug information including parsed times.
+        
+        This is useful for debugging scheduler issues. It returns jobs with
+        additional computed fields like is_due and time_until_due.
+        
+        Returns:
+            List of job dicts with debug info
+            
+        Example:
+            >>> debug_info = await scheduler.get_jobs_debug_info()
+            >>> for job in debug_info:
+            ...     print(f"{job['id']}: due={job['is_due']}, eta={job['time_until_due']}")
+        """
+        await self._load_jobs()
+        now = datetime.now(timezone.utc)
+        
+        jobs_info = []
+        for job in self.jobs:
+            job_info = {
+                "id": job.get("id"),
+                "job_type": job.get("job_type"),
+                "status": job.get("status"),
+                "schedule_at": job.get("schedule_at"),
+                "created_at": job.get("created_at"),
+                "attempts": job.get("attempts", 0),
+                "max_attempts": job.get("max_attempts", 3),
+            }
+            
+            # Parse schedule_at and add computed fields
+            try:
+                schedule_at = datetime.fromisoformat(job["schedule_at"])
+                if schedule_at.tzinfo is None:
+                    schedule_at = schedule_at.replace(tzinfo=timezone.utc)
+                    job_info["timezone_warning"] = "schedule_at was timezone-naive, assumed UTC"
+                
+                job_info["is_due"] = schedule_at <= now
+                time_diff = schedule_at - now
+                job_info["time_until_due_seconds"] = time_diff.total_seconds()
+                job_info["time_until_due_readable"] = str(time_diff)
+            except Exception as e:
+                job_info["parse_error"] = str(e)
+            
+            jobs_info.append(job_info)
+        
+        return jobs_info
