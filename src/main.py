@@ -28,6 +28,7 @@ from langchain_core.tools import StructuredTool  # noqa: E402
 
 from src.core.agent import build_agent  # noqa: E402
 from src.core.deepagent import build_deep_agent  # noqa: E402
+from src.core.config import load_bot_config  # noqa: E402
 from src.core.store import GCSStore, create_search_memory_tool  # noqa: E402
 from src.core.scheduler import create_storage  # noqa: E402
 from src.core.terminal import TerminalExecutor  # noqa: E402
@@ -44,21 +45,35 @@ def validate_env_vars() -> None:
     Raises:
         RuntimeError: If any required env var is missing
     """
-    required_vars = [
-        "GOOGLE_APPLICATION_CREDENTIALS",
-        "VERTEX_AI_PROJECT_ID",
-        "ALLOWED_USERS",
-    ]
+    # Always required
+    required_vars = ["ALLOWED_USERS"]
+    
+    # Check if using GCP-specific features
+    memory_backend = os.getenv("MEMORY_BACKEND", "local")
+    model_provider = os.getenv("MODEL_PROVIDER", "google_vertexai")
+    secrets_provider = os.getenv("SECRETS_PROVIDER", "env")
+    
+    # GOOGLE_APPLICATION_CREDENTIALS only required in development when using GCP features
+    # In production (Cloud Run), the service account is automatically available
+    environment = os.getenv("ENVIRONMENT", "development")
+    uses_gcp = memory_backend == "gcs" or model_provider == "google_vertexai" or secrets_provider == "gcp_secret_manager"
+    
+    if environment == "development" and uses_gcp:
+        required_vars.append("GOOGLE_APPLICATION_CREDENTIALS")
+    
+    # VERTEX_AI_PROJECT_ID required if using Vertex AI
+    if model_provider == "google_vertexai":
+        required_vars.append("VERTEX_AI_PROJECT_ID")
     
     missing = [var for var in required_vars if not os.getenv(var)]
     
     if missing:
         raise RuntimeError(
             f"Missing required environment variables: {', '.join(missing)}\n"
-            f"Copy .env.example to .env and fill in your values."
+            f"Copy .env.example to .env and fill in your values, or configure in bot.yaml"
         )
     
-    # Validate GOOGLE_APPLICATION_CREDENTIALS file exists
+    # Validate GOOGLE_APPLICATION_CREDENTIALS file exists (if required and set)
     creds_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
     if creds_path and not Path(creds_path).exists():
         raise RuntimeError(
@@ -127,6 +142,9 @@ def create_app():
     Raises:
         RuntimeError: If configuration is invalid
     """
+    # Load bot configuration from bot.yaml (with defaults)
+    load_bot_config()
+    
     # Validate configuration
     validate_env_vars()
     
@@ -153,21 +171,24 @@ def create_app():
     skills_dir = os.getenv("SKILLS_DIR", "./skills")
     tools = load_skills_as_tools(skills_dir, terminal_executor)
     
-    # Create GCS Store for long-term memory
-    gcs_enabled = os.getenv("GCS_ENABLED", "false").lower() == "true"
-    gcs_bucket = os.getenv("GCS_MEMORY_BUCKET")
+    # Create memory store based on configured backend
+    memory_backend = os.getenv("MEMORY_BACKEND", "local")
     
     store = None
-    if gcs_enabled and gcs_bucket:
-        store = GCSStore(bucket_name=gcs_bucket, project_id=project_id)
-        logger.info(f"✅ GCS Store created (bucket={gcs_bucket})")
-        
-        # Add search_memory tool
-        search_tool = create_search_memory_tool(store)
-        tools.append(search_tool)
-        logger.info("✅ search_memory tool added")
+    if memory_backend == "gcs":
+        gcs_bucket = os.getenv("GCS_MEMORY_BUCKET")
+        if not gcs_bucket:
+            logger.warning("⚠️  MEMORY_BACKEND is 'gcs' but GCS_MEMORY_BUCKET not set, falling back to no memory store")
+        else:
+            store = GCSStore(bucket_name=gcs_bucket, project_id=project_id)
+            logger.info(f"✅ GCS Store created (bucket={gcs_bucket})")
+            
+            # Add search_memory tool
+            search_tool = create_search_memory_tool(store)
+            tools.append(search_tool)
+            logger.info("✅ search_memory tool added")
     else:
-        logger.warning("⚠️  GCS Store disabled - no long-term memory persistence")
+        logger.info(f"Memory backend set to '{memory_backend}' - no persistent memory store")
     
     # Create Scheduler Storage Backend
     memory_dir = os.getenv("MEMORY_DIR", "./data/memory")

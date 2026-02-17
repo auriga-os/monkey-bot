@@ -165,10 +165,24 @@ async def webhook(payload: GoogleChatWebhook):
 
     # Call Agent Core to process message
     try:
-        # Try new agent.invoke() API first
-        if hasattr(agent_core, 'invoke'):
+        # Try new agent.ainvoke() API first (LangGraph)
+        if hasattr(agent_core, 'ainvoke'):
+            result = await agent_core.ainvoke(
+                {"messages": [{"role": "user", "content": filtered["content"]}]},
+                config={
+                    "configurable": {
+                        "thread_id": filtered["user_id"],
+                        "user_id": filtered["user_id"],
+                    }
+                },
+            )
+            # Extract response from result
+            response_message = result["messages"][-1]
+            response_text = response_message.content if hasattr(response_message, "content") else str(response_message)
+        elif hasattr(agent_core, 'invoke'):
+            # Try sync invoke
             result = await agent_core.invoke(
-                inputs={"messages": [{"role": "user", "content": filtered["content"]}]},
+                {"messages": [{"role": "user", "content": filtered["content"]}]},
                 config={
                     "configurable": {
                         "thread_id": filtered["user_id"],

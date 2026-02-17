@@ -82,6 +82,7 @@ def test_client_mocked(mock_vertex_ai, monkeypatch, tmp_path):
     monkeypatch.setenv("GCS_ENABLED", "false")
     monkeypatch.setenv("MEMORY_DIR", str(tmp_path / "memory"))
     monkeypatch.setenv("SKILLS_DIR", "./skills")
+    monkeypatch.setenv("GOOGLE_CHAT_FORMAT", "legacy")  # Use legacy format for tests
     
     # Mock Vertex AI client creation BEFORE importing
     monkeypatch.setattr(
