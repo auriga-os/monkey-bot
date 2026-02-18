@@ -58,6 +58,7 @@ CONFIG_MAPPING = {
     # Gateway
     "gateway.allowed_users": "ALLOWED_USERS",
     "gateway.chat_format": "GOOGLE_CHAT_FORMAT",
+    "gateway.webhook_url": "GOOGLE_CHAT_WEBHOOK",
     # Memory
     "memory.dir": "MEMORY_DIR",
     "memory.backend": "MEMORY_BACKEND",

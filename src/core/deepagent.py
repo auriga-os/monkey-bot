@@ -11,6 +11,7 @@ from pathlib import Path
 import yaml
 from langchain_core.language_models import BaseChatModel
 from langchain_core.tools import BaseTool
+from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.store.base import BaseStore
 
 from .prompt import compose_system_prompt
@@ -42,6 +43,7 @@ def build_deep_agent(
     store: BaseStore | None = None,
     scheduler: object | None = None,
     subagents: list[dict] | None = None,
+    checkpointer: object | None = None,
     summarization_trigger: tuple[str, float] = ("fraction", 0.85),
     summarization_keep: tuple[str, float] = ("fraction", 0.10),
 ):
@@ -65,6 +67,7 @@ def build_deep_agent(
         store: LangGraph Store for long-term memory (enables search_memory tool)
         scheduler: Scheduler instance (enables schedule_task tool)
         subagents: List of subagent configs for SubAgentMiddleware
+        checkpointer: LangGraph checkpointer for conversation persistence (defaults to InMemorySaver)
         summarization_trigger: When to trigger summarization (type, value)
         summarization_keep: How much context to keep after summarization (type, value)
 
@@ -158,6 +161,14 @@ def build_deep_agent(
         middleware.append(subagent_mw)
         logger.info(f"Added SubAgentMiddleware with {len(subagents)} subagents")
 
+    # TODO: Support persistent checkpointers for multi-instance deployments:
+    #   - Firestore: custom BaseCheckpointSaver (best fit for GCP/Cloud Run)
+    #   - Postgres: AsyncPostgresSaver from langgraph-checkpoint-postgres
+    #   - Redis: RedisSaver from langgraph-checkpoint-redis
+    if checkpointer is None:
+        checkpointer = InMemorySaver()
+        logger.info("Using InMemorySaver for conversation persistence (in-memory only)")
+
     # Step 5: Call create_deep_agent with all params
     agent = create_deep_agent(
         model=model,
@@ -166,6 +177,7 @@ def build_deep_agent(
         middleware=middleware,
         backend=backend,
         store=store,
+        checkpointer=checkpointer,
     )
 
     logger.info(
