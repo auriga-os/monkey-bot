@@ -100,8 +100,8 @@ pip install emonk[all]
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────┐
-│            Gateway (FastAPI)                │
+┌─────────────────────────────────────────────---┐
+│            Gateway (FastAPI)                   │
 │   POST /webhook   POST /cron/tick   GET /health
 └──────────────┬──────────────────────┬──────────┘
                │                      │
