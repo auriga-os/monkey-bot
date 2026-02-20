@@ -5,6 +5,7 @@ agents with monkey-bot's opinionated defaults on top of LangChain Deep Agents.
 """
 
 import logging
+import os
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from langchain_core.tools import BaseTool
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.store.base import BaseStore
 
+from .filesystem_sync import GCSFilesystemSync
 from .prompt import compose_system_prompt
 from .store import create_search_memory_tool
 
@@ -38,7 +40,6 @@ def build_deep_agent(
     tools: Sequence[BaseTool | Callable] | None = None,
     system_prompt: str = "",
     skills: list[str] | None = None,
-    memory: list[str] | None = None,
     backend: object | None = None,
     store: BaseStore | None = None,
     scheduler: object | None = None,
@@ -62,7 +63,6 @@ def build_deep_agent(
         tools: Optional list of LangChain tools or callables
         system_prompt: User's custom system prompt (Layer 3)
         skills: List of skill directory paths to load (e.g., ["./skills/", "/shared/skills/"])
-        memory: List of memory directory paths (e.g., ["/memory/"])
         backend: Backend protocol implementation (BackendProtocol or SandboxBackendProtocol)
         store: LangGraph Store for long-term memory (enables search_memory tool)
         scheduler: Scheduler instance (enables schedule_task tool)
@@ -127,13 +127,32 @@ def build_deep_agent(
         skills_manifest = _generate_skills_manifest(skills)
         logger.info(f"Generated skills manifest from {len(skills)} directories")
 
-    # Step 3: Compose 3-layer system prompt
+    # Step 3: Resolve GCS filesystem sync from env vars (set by load_bot_config from bot.yaml)
+    # memory.backend: gcs in bot.yaml → MEMORY_BACKEND=gcs + GCS_MEMORY_BUCKET set
+    fs_sync: GCSFilesystemSync | None = None
+    if os.getenv("MEMORY_BACKEND", "local") == "gcs":
+        memory_bucket = os.getenv("GCS_MEMORY_BUCKET")
+        if memory_bucket:
+            fs_sync = GCSFilesystemSync(
+                bucket_name=memory_bucket,
+                local_dir=os.getenv("MEMORY_DIR", "./data/memory"),
+                project_id=os.getenv("GCP_PROJECT_ID"),
+            )
+            logger.info(f"GCS filesystem sync: configured (bucket={memory_bucket})")
+        else:
+            logger.warning(
+                "MEMORY_BACKEND=gcs but GCS_MEMORY_BUCKET is not set — "
+                "filesystem sync disabled"
+            )
+
+    # Step 4: Compose 3-layer system prompt
     full_system_prompt = compose_system_prompt(
         skills_manifest=skills_manifest,
         user_system_prompt=system_prompt,
         has_scheduler=scheduler is not None,
         has_memory=store is not None,
         has_backend=backend is not None,
+        has_filesystem_memory=fs_sync is not None,
     )
 
     logger.info(
@@ -143,11 +162,12 @@ def build_deep_agent(
             "has_scheduler": scheduler is not None,
             "has_memory": store is not None,
             "has_backend": backend is not None,
+            "has_filesystem_memory": fs_sync is not None,
             "num_skills": len(skills) if skills else 0,
         }
     )
 
-    # Step 4: Configure middleware
+    # Step 5: Configure middleware
     middleware = []
 
     # Note: SummarizationMiddleware is added by default by create_deep_agent,
@@ -169,7 +189,7 @@ def build_deep_agent(
         checkpointer = InMemorySaver()
         logger.info("Using InMemorySaver for conversation persistence (in-memory only)")
 
-    # Step 5: Call create_deep_agent with all params
+    # Step 6: Call create_deep_agent with all params
     agent = create_deep_agent(
         model=model,
         tools=all_tools,
@@ -180,12 +200,24 @@ def build_deep_agent(
         checkpointer=checkpointer,
     )
 
+    # Attach fs_sync to agent so callers can run startup sync and register SIGTERM handler
+    if fs_sync is not None:
+        agent.fs_sync = fs_sync
+        fs_sync.register_sigterm_handler()
+        logger.info(
+            "GCS filesystem sync: attached to agent "
+            "(call agent.fs_sync.sync_from_gcs() at startup)"
+        )
+    else:
+        agent.fs_sync = None
+
     logger.info(
         "Deep agent created",
         extra={
             "component": "deepagent",
             "num_tools": len(all_tools),
             "num_middleware": len(middleware),
+            "has_filesystem_sync": fs_sync is not None,
         }
     )
 

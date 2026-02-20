@@ -10,6 +10,7 @@ This package contains the core building blocks for monkey-bot:
 
 from .agent import build_agent, create_agent_with_mocks, AgentWrapper
 from .deepagent import build_deep_agent
+from .filesystem_sync import GCSFilesystemSync
 from .interfaces import (
     AgentCoreInterface,
     AgentError,
@@ -48,6 +49,8 @@ __all__ = [
     # Store
     "GCSStore",
     "create_search_memory_tool",
+    # Filesystem sync
+    "GCSFilesystemSync",
     # Middleware
     "SessionSummaryMiddleware",
     # Terminal (legacy/optional)

@@ -15,16 +15,29 @@ To use a skill:
 1. Run: ls /skills/
 2. Read: read_file /skills/<skill-name>/SKILL.md
 3. Follow the instructions in SKILL.md
-{memory_section}
+{filesystem_memory_section}
+{gcs_store_section}
 {scheduler_section}
 {sandbox_section}
 """
 
-MEMORY_SECTION = """
-## Memory Management
-- Save session notes to: /memory/sessions/notes.md
-- Search past sessions: grep "keyword" /memory/sessions/
-- After completing user requests, write key facts to /memory/facts.md
+GCS_STORE_SECTION = """
+## Session Memory Search
+- Use search_memory tool to recall past conversation summaries
+- Useful for recalling context from previous sessions with a user
+"""
+
+FILESYSTEM_MEMORY_SECTION = """
+## Persistent Memory Filesystem
+Your persistent memory lives in `./data/memory/`. It survives container restarts.
+
+- Start here: read_file ./data/memory/INDEX.md  (what each file is for)
+- Read context: read_file ./data/memory/BRAND_VOICE.md
+- Write/update: write_file ./data/memory/CAMPAIGNS.md "updated content"
+- Create new files for anything you want to remember long-term
+- Search: grep "keyword" ./data/memory/
+
+Use this proactively — read relevant files before responding, write after sessions.
 """
 
 SCHEDULER_SECTION = """
@@ -42,13 +55,12 @@ SANDBOX_SECTION = """
 - Results are captured and returned
 """
 
-LAYER_2_TEMPLATE = """You are a helpful AI assistant built on the monkey-bot (emonk) framework by ez-ai.
-
-You have access to:
+LAYER_2_TEMPLATE = """You are an AI agent with access to the following capabilities:
 - Filesystem tools (ls, read_file, write_file, edit_file, grep)
 {sandbox_line}
 - Skills (procedural instructions in /skills/)
-{memory_line}
+{filesystem_memory_line}
+{gcs_store_line}
 {scheduler_line}
 
 Be concise and clear. Ask clarifying questions when the request is ambiguous.
@@ -61,6 +73,7 @@ def compose_system_prompt(
     has_scheduler: bool = False,
     has_memory: bool = False,
     has_backend: bool = False,
+    has_filesystem_memory: bool = False,
 ) -> str:
     """Compose the 3-layer system prompt.
 
@@ -68,8 +81,9 @@ def compose_system_prompt(
         skills_manifest: Formatted list of available skills with descriptions
         user_system_prompt: Optional custom system prompt from framework consumer
         has_scheduler: Whether scheduler is enabled (adds scheduling instructions)
-        has_memory: Whether memory/store is enabled (adds memory instructions)
+        has_memory: Whether GCS store is enabled (adds search_memory tool instructions)
         has_backend: Whether backend is enabled (adds shell execution instructions if supported)
+        has_filesystem_memory: Whether GCS filesystem sync is enabled (adds ./data/memory/ instructions)
 
     Returns:
         Complete system prompt combining all 3 layers
@@ -88,19 +102,25 @@ def compose_system_prompt(
     # Build Layer 1
     layer_1 = LAYER_1_TEMPLATE.format(
         skills_manifest=skills_manifest or "No skills available.",
-        memory_section=MEMORY_SECTION if has_memory else "",
+        filesystem_memory_section=FILESYSTEM_MEMORY_SECTION if has_filesystem_memory else "",
+        gcs_store_section=GCS_STORE_SECTION if has_memory else "",
         scheduler_section=SCHEDULER_SECTION if has_scheduler else "",
         sandbox_section=SANDBOX_SECTION if has_backend else "",
     )
 
     # Build Layer 2
     sandbox_line = "- Shell execution (execute) in an isolated sandbox" if has_backend else ""
-    memory_line = "- Memory (persistent storage in /memory/)" if has_memory else ""
+    filesystem_memory_line = (
+        "- Persistent memory filesystem at `./data/memory/` (read/write, survives restarts)"
+        if has_filesystem_memory else ""
+    )
+    gcs_store_line = "- Session memory search (search_memory tool)" if has_memory else ""
     scheduler_line = "- Scheduling (schedule_task for recurring jobs)" if has_scheduler else ""
 
     layer_2 = LAYER_2_TEMPLATE.format(
         sandbox_line=sandbox_line,
-        memory_line=memory_line,
+        filesystem_memory_line=filesystem_memory_line,
+        gcs_store_line=gcs_store_line,
         scheduler_line=scheduler_line,
     )
 
