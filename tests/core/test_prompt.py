@@ -7,6 +7,7 @@ import pytest
 
 from src.core.prompt import (
     compose_system_prompt,
+    _build_skills_usage,
     LAYER_1_TEMPLATE,
     LAYER_2_TEMPLATE,
     MEMORY_SECTION,
@@ -258,3 +259,67 @@ class TestEdgeCases:
         assert "Line 1" in prompt
         assert "Line 2" in prompt
         assert "Line 3" in prompt
+
+
+class TestBuildSkillsUsage:
+    """Tests for _build_skills_usage path normalization."""
+
+    def test_none_defaults_to_relative_skills(self):
+        """No skills_dirs → falls back to relative 'skills/' path."""
+        result = _build_skills_usage(None)
+        assert "ls skills/" in result
+        assert "read_file skills/" in result
+
+    def test_empty_list_defaults_to_relative_skills(self):
+        """Empty list → falls back to relative 'skills/' path."""
+        result = _build_skills_usage([])
+        assert "ls skills/" in result
+        assert "read_file skills/" in result
+
+    def test_dotslash_prefix_stripped(self):
+        """'./skills/' → 'skills/' (strips leading ./)."""
+        result = _build_skills_usage(["./skills/"])
+        assert "ls skills/" in result
+        assert "read_file skills/" in result
+        assert "/skills/" not in result
+
+    def test_relative_path_no_dotslash(self):
+        """'skills/' with no prefix stays as 'skills/'."""
+        result = _build_skills_usage(["skills/"])
+        assert "ls skills/" in result
+
+    def test_absolute_path_preserved(self):
+        """Absolute path is kept as-is."""
+        result = _build_skills_usage(["/custom/path/skills/"])
+        assert "ls /custom/path/skills/" in result
+        assert "read_file /custom/path/skills/" in result
+
+    def test_trailing_slash_handled(self):
+        """Trailing slash is stripped before building instruction."""
+        result = _build_skills_usage(["./skills/"])
+        assert "ls skills/" in result
+        # Should not produce double slashes
+        assert "skills//" not in result
+
+    def test_first_dir_used_when_multiple(self):
+        """When multiple dirs provided, first one is used in instruction."""
+        result = _build_skills_usage(["./skills/", "/shared/skills/"])
+        assert "ls skills/" in result
+        assert "/shared/skills/" not in result
+
+    def test_instruction_contains_skill_md_reference(self):
+        """Instruction always references SKILL.md."""
+        result = _build_skills_usage(["./skills/"])
+        assert "SKILL.md" in result
+
+    def test_compose_system_prompt_uses_skills_dirs(self):
+        """compose_system_prompt passes skills_dirs through to the instruction."""
+        prompt = compose_system_prompt(skills_dirs=["./custom-skills/"])
+        assert "ls custom-skills/" in prompt
+        assert "read_file custom-skills/" in prompt
+
+    def test_compose_system_prompt_default_path_without_skills_dirs(self):
+        """compose_system_prompt uses default 'skills/' when skills_dirs omitted."""
+        prompt = compose_system_prompt()
+        assert "ls skills/" in prompt
+        assert "read_file skills/" in prompt
