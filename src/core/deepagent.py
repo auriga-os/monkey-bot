@@ -148,6 +148,7 @@ def build_deep_agent(
     # Step 4: Compose 3-layer system prompt
     full_system_prompt = compose_system_prompt(
         skills_manifest=skills_manifest,
+        skills_dirs=skills,
         user_system_prompt=system_prompt,
         has_scheduler=scheduler is not None,
         has_memory=store is not None,
