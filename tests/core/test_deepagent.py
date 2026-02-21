@@ -49,7 +49,7 @@ class TestBuildDeepAgent:
         assert call_kwargs["middleware"] == []
         
         # Check system prompt is composed
-        assert "You are a helpful AI assistant" in call_kwargs["system_prompt"]
+        assert "You are an AI agent" in call_kwargs["system_prompt"]
     
     @patch("src.core.deepagent._DEEPAGENTS_AVAILABLE", True)
     @patch("src.core.deepagent.create_deep_agent")
