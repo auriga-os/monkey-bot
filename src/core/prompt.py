@@ -78,11 +78,11 @@ def _build_skills_usage(skills_dirs: list[str] | None) -> str:
 
     Examples:
         >>> _build_skills_usage(["./skills/"])
-        'To use a skill:\\n1. Run: ls skills/\\n...'
+        'IMPORTANT: Skills are NOT native tools...'
         >>> _build_skills_usage(["/custom/path/skills/"])
-        'To use a skill:\\n1. Run: ls /custom/path/skills/\\n...'
+        'IMPORTANT: Skills are NOT native tools...'
         >>> _build_skills_usage(None)
-        'To use a skill:\\n1. Run: ls skills/\\n...'
+        'IMPORTANT: Skills are NOT native tools...'
     """
     if not skills_dirs:
         path = "skills"
@@ -91,10 +91,11 @@ def _build_skills_usage(skills_dirs: list[str] | None) -> str:
         path = p[2:] if p.startswith("./") else p
 
     return (
-        f"To use a skill:\n"
-        f"1. Run: ls {path}/\n"
-        f"2. Read: read_file {path}/<skill-name>/SKILL.md\n"
-        f"3. Follow the instructions in SKILL.md"
+        f"IMPORTANT: Skills are NOT native tools. They are shell scripts you invoke via execute.\n"
+        f"To use a skill, you MUST:\n"
+        f"1. read_file {path}/<skill-name>/SKILL.md  (read instructions first)\n"
+        f"2. Use the execute tool to run the command shown in the SKILL.md\n"
+        f"Never call a skill as a function. Always read its SKILL.md before invoking."
     )
 
 
@@ -161,6 +162,8 @@ def compose_system_prompt(
     )
 
     # Clean up excessive newlines from empty feature lines
+    while "\n\n\n" in layer_1:
+        layer_1 = layer_1.replace("\n\n\n", "\n\n")
     while "\n\n\n" in layer_2:
         layer_2 = layer_2.replace("\n\n\n", "\n\n")
 
