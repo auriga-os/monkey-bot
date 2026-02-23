@@ -201,13 +201,13 @@ def build_deep_agent(
         checkpointer=checkpointer,
     )
 
-    # Attach fs_sync to agent so callers can run startup sync and register SIGTERM handler
+    # Attach fs_sync to agent so callers can run startup sync via FastAPI lifespan
     if fs_sync is not None:
         agent.fs_sync = fs_sync
-        fs_sync.register_sigterm_handler()
         logger.info(
             "GCS filesystem sync: attached to agent "
-            "(call agent.fs_sync.sync_from_gcs() at startup)"
+            "(wire agent.fs_sync.sync_from_gcs() to FastAPI lifespan startup, "
+            "agent.fs_sync.close() to lifespan shutdown)"
         )
     else:
         agent.fs_sync = None

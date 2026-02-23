@@ -26,15 +26,17 @@ GCS_STORE_SECTION = """
 
 FILESYSTEM_MEMORY_SECTION = """
 ## Persistent Memory Filesystem
-Your persistent memory lives in `./data/memory/`. It survives container restarts.
+Your persistent memory lives in `./data/memory/`. Files you write here survive container restarts.
 
-- Start here: read_file ./data/memory/INDEX.md  (what each file is for)
-- Read context: read_file ./data/memory/BRAND_VOICE.md
-- Write/update: write_file ./data/memory/CAMPAIGNS.md "updated content"
-- Create new files for anything you want to remember long-term
-- Search: grep "keyword" ./data/memory/
+At the start of each session, explore what's in memory:
+1. ls ./data/memory/               (see what files exist)
+2. read_file ./data/memory/<file>  (read anything relevant to the current request)
 
-Use this proactively — read relevant files before responding, write after sessions.
+To save something for later:
+- write_file ./data/memory/ANYTHING.md "content"  (create whatever files make sense)
+- grep "keyword" ./data/memory/                    (search across all memory files)
+
+Use this proactively — read before responding, write after learning something new.
 """
 
 SCHEDULER_SECTION = """

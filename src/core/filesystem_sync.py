@@ -1,15 +1,13 @@
 """GCS-backed filesystem sync for agent persistent memory.
 
-Syncs a local directory to/from GCS so agent memory files survive
-Cloud Run container restarts.
+Uses the google-cloud-storage Python library directly — no gsutil required.
 
-Strategy: startup pull + periodic push + SIGTERM flush.
+Strategy: startup pull + periodic push + close() flush on shutdown.
 All sync failures are non-fatal — agent continues with local state.
 """
 
 import asyncio
 import logging
-import signal
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -20,13 +18,16 @@ class GCSFilesystemSync:
 
     On startup: pulls latest from GCS → local.
     Periodically: pushes local → GCS every sync_interval seconds.
-    On SIGTERM: final push before Cloud Run kills the container.
+    On shutdown: call close() for final push (wire to FastAPI lifespan).
+
+    Uses google-cloud-storage Python library — no gsutil dependency.
 
     Example:
         >>> sync = GCSFilesystemSync("auriga-marketing-memory", "./data/memory")
         >>> await sync.sync_from_gcs()      # startup pull
         >>> await sync.start_periodic_sync()  # background task
-        >>> sync.register_sigterm_handler()   # SIGTERM flush
+        >>> # On shutdown (FastAPI lifespan):
+        >>> await sync.close()
     """
 
     def __init__(
@@ -56,6 +57,35 @@ class GCSFilesystemSync:
     def _gcs_uri(self) -> str:
         return f"gs://{self.bucket_name}/{self.gcs_prefix}"
 
+    def _get_client(self):
+        from google.cloud import storage
+        return storage.Client(project=self.project_id)
+
+    def _pull_from_gcs(self) -> None:
+        """Pull GCS bucket prefix → local_dir (blocking, runs in executor)."""
+        client = self._get_client()
+        blobs = list(client.list_blobs(self.bucket_name, prefix=self.gcs_prefix))
+        for blob in blobs:
+            relative = blob.name[len(self.gcs_prefix):]
+            if not relative:
+                continue
+            local_path = self.local_dir / relative
+            local_path.parent.mkdir(parents=True, exist_ok=True)
+            blob.download_to_filename(str(local_path))
+            logger.debug(f"GCS filesystem sync: pulled {blob.name} → {local_path}")
+
+    def _push_to_gcs(self) -> None:
+        """Push local_dir → GCS bucket prefix (blocking, runs in executor)."""
+        client = self._get_client()
+        bucket = client.bucket(self.bucket_name)
+        for local_path in self.local_dir.rglob("*"):
+            if local_path.is_file():
+                relative = local_path.relative_to(self.local_dir)
+                gcs_path = self.gcs_prefix + str(relative)
+                blob = bucket.blob(gcs_path)
+                blob.upload_from_filename(str(local_path))
+                logger.debug(f"GCS filesystem sync: pushed {local_path} → {gcs_path}")
+
     async def sync_from_gcs(self) -> None:
         """Pull GCS → local disk.
 
@@ -64,20 +94,28 @@ class GCSFilesystemSync:
         Non-fatal: logs error and returns if GCS is unreachable.
         """
         self.local_dir.mkdir(parents=True, exist_ok=True)
-        cmd = ["gsutil", "-m", "rsync", "-r", self._gcs_uri, str(self.local_dir) + "/"]
         logger.info(f"GCS filesystem sync: pulling from {self._gcs_uri} → {self.local_dir}")
-        await self._run_gsutil(cmd, direction="pull")
+        try:
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, self._pull_from_gcs)
+            logger.info("GCS filesystem sync: pull complete")
+        except Exception as e:
+            logger.error(f"GCS filesystem sync: pull failed: {e}")
 
     async def sync_to_gcs(self) -> None:
         """Push local disk → GCS.
 
-        Called periodically by the background task and on SIGTERM/shutdown.
+        Called periodically by the background task and on clean shutdown.
         Non-fatal: logs error and returns on failure.
         """
         self.local_dir.mkdir(parents=True, exist_ok=True)
-        cmd = ["gsutil", "-m", "rsync", "-r", str(self.local_dir) + "/", self._gcs_uri]
         logger.info(f"GCS filesystem sync: pushing {self.local_dir} → {self._gcs_uri}")
-        await self._run_gsutil(cmd, direction="push")
+        try:
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, self._push_to_gcs)
+            logger.info("GCS filesystem sync: push complete")
+        except Exception as e:
+            logger.error(f"GCS filesystem sync: push failed: {e}")
 
     async def start_periodic_sync(self) -> asyncio.Task:
         """Start background asyncio task that calls sync_to_gcs every sync_interval seconds.
@@ -100,24 +138,10 @@ class GCSFilesystemSync:
         )
         return self._sync_task
 
-    def register_sigterm_handler(self) -> None:
-        """Register SIGTERM handler for final sync before Cloud Run kills the container.
-
-        Cloud Run sends SIGTERM 10s before SIGKILL.
-        Handler runs sync_to_gcs() synchronously (new event loop) and exits cleanly.
-        """
-        def _handler(signum: int, frame: object) -> None:
-            logger.info("GCS filesystem sync: SIGTERM received, running final flush...")
-            asyncio.run(self.sync_to_gcs())
-            logger.info("GCS filesystem sync: final flush complete")
-
-        signal.signal(signal.SIGTERM, _handler)
-        logger.debug("GCS filesystem sync: SIGTERM handler registered")
-
     async def close(self) -> None:
         """Cancel the periodic task and do a final sync_to_gcs.
 
-        Call this on clean application shutdown.
+        Wire this to FastAPI lifespan shutdown for clean container exit.
         """
         if self._sync_task and not self._sync_task.done():
             self._sync_task.cancel()
@@ -127,29 +151,3 @@ class GCSFilesystemSync:
                 pass
         await self.sync_to_gcs()
         logger.info("GCS filesystem sync: closed")
-
-    async def _run_gsutil(self, cmd: list[str], direction: str) -> None:
-        """Run a gsutil command. Logs result. Never raises."""
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await proc.communicate()
-            if proc.returncode != 0:
-                logger.error(
-                    f"GCS filesystem sync: {direction} failed "
-                    f"(exit {proc.returncode}): {stderr.decode().strip()}"
-                )
-            else:
-                logger.info(f"GCS filesystem sync: {direction} complete")
-                if stdout.strip():
-                    logger.debug(f"GCS filesystem sync: {stdout.decode().strip()}")
-        except FileNotFoundError:
-            logger.error(
-                "GCS filesystem sync: gsutil not found — "
-                "install google-cloud-sdk or add it to PATH"
-            )
-        except Exception as e:
-            logger.error(f"GCS filesystem sync: {direction} unexpected error: {e}")
