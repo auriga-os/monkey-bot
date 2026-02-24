@@ -106,7 +106,7 @@ class TerminalExecutor:
         self,
         command: str,
         args: List[str],
-        timeout: int = 30
+        timeout: int = 60
     ) -> ExecutionResult:
         """
         Execute a terminal command securely with allowlist validation.
@@ -118,7 +118,7 @@ class TerminalExecutor:
         Args:
             command: Command to execute (must be in ALLOWED_COMMANDS)
             args: Command arguments (paths must be in ALLOWED_PATHS)
-            timeout: Maximum execution time in seconds (default: 30)
+            timeout: Maximum execution time in seconds (default: 60)
         
         Returns:
             ExecutionResult containing stdout, stderr, and exit code
