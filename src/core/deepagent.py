@@ -346,12 +346,17 @@ def _create_schedule_task_tool(scheduler) -> BaseTool:
     from datetime import datetime, timezone
 
     from langchain_core.tools import tool
+    from pydantic import BaseModel, ConfigDict
+
+    class JobPayload(BaseModel):
+        """Flexible job payload — accepts any key/value pairs."""
+        model_config = ConfigDict(extra='allow')
 
     @tool
     async def schedule_task(
         job_type: str,
         schedule_at_iso: str,
-        payload: dict,
+        payload: JobPayload,
     ) -> str:
         """Schedule a background task to run at a specific time.
 
@@ -361,7 +366,7 @@ def _create_schedule_task_tool(scheduler) -> BaseTool:
         Args:
             job_type: Type of job (e.g., "post_content", "send_reminder")
             schedule_at_iso: When to run the job (ISO 8601 datetime string)
-            payload: Job-specific data (dict)
+            payload: Job-specific data (flexible key/value pairs)
 
         Returns:
             Success message with job ID
@@ -389,7 +394,7 @@ def _create_schedule_task_tool(scheduler) -> BaseTool:
         job_id = await scheduler.schedule_job(
             job_type=job_type,
             schedule_at=schedule_at,
-            payload=payload,
+            payload=payload.model_dump(),
         )
 
         return f"Task scheduled successfully. Job ID: {job_id}"

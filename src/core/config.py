@@ -29,6 +29,7 @@ DEFAULTS = {
     "MODEL_NAME": "gemini-2.5-flash",
     "MODEL_TEMPERATURE": "0.7",
     "MODEL_MAX_TOKENS": "8192",
+    "MODEL_THINKING_BUDGET": "-1",
     "PORT": "8080",
     "LOG_LEVEL": "INFO",
     "ENVIRONMENT": "development",
@@ -52,6 +53,7 @@ CONFIG_MAPPING = {
     "model.name": "MODEL_NAME",
     "model.temperature": "MODEL_TEMPERATURE",
     "model.max_tokens": "MODEL_MAX_TOKENS",
+    "model.thinking_budget": "MODEL_THINKING_BUDGET",
     # Server
     "server.port": "PORT",
     "server.log_level": "LOG_LEVEL",
@@ -541,6 +543,7 @@ def get_model(
     model_name: str | None = None,
     temperature: float | None = None,
     max_tokens: int | None = None,
+    thinking_budget: int | None = None,
 ) -> BaseChatModel:
     """Get configured chat model from environment or explicit parameters.
 
@@ -557,6 +560,8 @@ def get_model(
         model_name: Model name override (default: from MODEL_NAME env var)
         temperature: Temperature override (default: from MODEL_TEMPERATURE env var)
         max_tokens: Max tokens override (default: from MODEL_MAX_TOKENS env var)
+        thinking_budget: Gemini thinking token budget (-1=dynamic, 0=off, 1-24576=cap).
+            Only applies to google_vertexai provider. Default: -1 (model auto-decides).
 
     Returns:
         Configured BaseChatModel instance
@@ -570,6 +575,7 @@ def get_model(
         MODEL_NAME: Model name/identifier
         MODEL_TEMPERATURE: Temperature for generation (0.0-1.0)
         MODEL_MAX_TOKENS: Maximum output tokens
+        MODEL_THINKING_BUDGET: Gemini thinking budget (-1, 0, or 1-24576)
 
     Example:
         >>> # Use environment variables
@@ -593,10 +599,14 @@ def get_model(
     max_tokens = max_tokens if max_tokens is not None else int(
         os.getenv("MODEL_MAX_TOKENS", "8192")
     )
+    thinking_budget = thinking_budget if thinking_budget is not None else int(
+        os.getenv("MODEL_THINKING_BUDGET", "-1")
+    )
 
     logger.info(
         f"Initializing model: provider={provider}, "
-        f"model={model_name}, temp={temperature}, max_tokens={max_tokens}"
+        f"model={model_name}, temp={temperature}, max_tokens={max_tokens}, "
+        f"thinking_budget={thinking_budget}"
     )
 
     if provider == "google_vertexai":
@@ -611,6 +621,7 @@ def get_model(
             model_name=model_name,
             temperature=temperature,
             max_output_tokens=max_tokens,
+            model_kwargs={"thinking_budget": thinking_budget},
         )
 
     elif provider == "openai":
