@@ -95,7 +95,7 @@ def _build_skills_usage(skills_dirs: list[str] | None) -> str:
     return (
         f"IMPORTANT: Skills are NOT native tools. They are shell scripts you invoke via execute.\n"
         f"To use a skill, you MUST:\n"
-        f"1. read_file {path}/<skill-name>/SKILL.md  (read instructions first)\n"
+        f"1. read_file /{path}/<skill-name>/SKILL.md  (read instructions first)\n"
         f"2. Use the execute tool to run the command shown in the SKILL.md\n"
         f"Never call a skill as a function. Never delegate skill execution to the task tool.\n"
         f"The task tool does NOT have access to your skills — always invoke skills yourself with execute."
