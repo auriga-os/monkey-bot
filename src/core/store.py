@@ -264,6 +264,64 @@ class GCSStore(BaseStore):
         
         return items
     
+    def batch(self, ops) -> list:
+        """Execute multiple operations synchronously in a single batch.
+
+        Dispatches each op to the appropriate GCS method.
+        Required by LangGraph's BaseStore ABC.
+        """
+        from langgraph.store.base import GetOp, PutOp, SearchOp, ListNamespacesOp
+        results = []
+        for op in ops:
+            if isinstance(op, GetOp):
+                results.append(self.get(op.namespace, op.key))
+            elif isinstance(op, PutOp):
+                if op.value is None:
+                    self.delete(op.namespace, op.key)
+                else:
+                    self.put(op.namespace, op.key, op.value)
+                results.append(None)
+            elif isinstance(op, SearchOp):
+                results.append(self.search(
+                    op.namespace_prefix,
+                    query=op.query,
+                    filter=op.filter,
+                    limit=op.limit,
+                ))
+            elif isinstance(op, ListNamespacesOp):
+                results.append(self._list_namespaces(op))
+            else:
+                results.append(None)
+        return results
+
+    async def abatch(self, ops) -> list:
+        """Execute multiple operations asynchronously.
+
+        Runs the synchronous batch() in a thread executor since
+        the GCS SDK is synchronous.
+        Required by LangGraph's BaseStore ABC.
+        """
+        import asyncio
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self.batch, list(ops))
+
+    def _list_namespaces(self, op) -> list:
+        """List unique namespace tuples in the bucket, satisfying ListNamespacesOp."""
+        blobs = self.client.list_blobs(self.bucket_name)
+        seen = set()
+        for blob in blobs:
+            parts = blob.name.rstrip("/").split("/")
+            if blob.name.endswith(".json"):
+                parts = parts[:-1]
+            namespace = tuple(parts)
+            if op.max_depth:
+                namespace = namespace[:op.max_depth]
+            seen.add(namespace)
+        namespaces = sorted(seen)
+        offset = op.offset or 0
+        limit = op.limit or 100
+        return namespaces[offset:offset + limit]
+
     def search(
         self,
         namespace: tuple,
