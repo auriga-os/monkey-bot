@@ -282,11 +282,11 @@ def load_bot_config(config_path: str | None = None) -> Dict[str, str]:
     """Load bot configuration from bot.yaml file with framework defaults.
     
     This is the main entry point for loading bot configuration. It:
-    1. Applies framework DEFAULTS for any env var not already set
-    2. Looks for bot.yaml in current directory (or explicit path)
-    3. Parses YAML and flattens to env var format
-    4. Derives computed values (e.g., GCS_ENABLED from memory.backend)
-    5. Sets values as os.environ (only if not already set)
+    1. Looks for bot.yaml in current directory (or explicit path)
+    2. Parses YAML and flattens to env var format
+    3. Derives computed values (e.g., GCS_ENABLED from memory.backend)
+    4. Sets bot.yaml values as os.environ (only if not already set by caller)
+    5. Fills remaining gaps with framework DEFAULTS
     6. Validates provider configuration
     7. Returns the loaded config dict
     
@@ -317,13 +317,7 @@ def load_bot_config(config_path: str | None = None) -> Dict[str, str]:
     if _config_loaded and not config_path:  # Allow explicit path to override
         return {k: os.environ.get(k, v) for k, v in DEFAULTS.items()}
     
-    # Step 1: Apply framework defaults (only if not already set)
-    for key, default_value in DEFAULTS.items():
-        if key not in os.environ:
-            os.environ[key] = default_value
-            logger.debug(f"Applied default: {key}={default_value}")
-    
-    # Step 2: Look for bot.yaml
+    # Step 1: Look for bot.yaml
     if config_path:
         yaml_path = Path(config_path)
     else:
@@ -331,9 +325,11 @@ def load_bot_config(config_path: str | None = None) -> Dict[str, str]:
     
     if not yaml_path.exists():
         logger.info(f"No bot.yaml found at {yaml_path.absolute()}, using defaults and env vars only")
-        # Mark as loaded even without yaml file
+        for key, default_value in DEFAULTS.items():
+            if key not in os.environ:
+                os.environ[key] = default_value
+                logger.debug(f"Applied default: {key}={default_value}")
         _config_loaded = True
-        # Return current env state (defaults already applied)
         return {k: os.environ.get(k, v) for k, v in DEFAULTS.items()}
     
     # Step 3: Parse YAML
@@ -363,14 +359,22 @@ def load_bot_config(config_path: str | None = None) -> Dict[str, str]:
     if "GCP_PROJECT_ID" in config and "VERTEX_AI_PROJECT_ID" not in config:
         config["VERTEX_AI_PROJECT_ID"] = config["GCP_PROJECT_ID"]
     
-    # Step 6: Set as environment variables (only if not already set)
+    # Step 6: Set bot.yaml values as environment variables (only if not already set by caller).
+    # Must happen BEFORE applying defaults so that bot.yaml values take priority over defaults.
+    # Priority chain: env vars (caller) > bot.yaml > framework defaults
     for key, value in config.items():
         if key not in os.environ:
             os.environ[key] = value
             logger.debug(f"Set from bot.yaml: {key}={value}")
     
-    # Step 7: Validate provider configuration
-    # Use current environment state (includes defaults + yaml + any existing env vars)
+    # Step 7: Apply framework defaults for any keys not covered by bot.yaml or caller env vars
+    for key, default_value in DEFAULTS.items():
+        if key not in os.environ:
+            os.environ[key] = default_value
+            logger.debug(f"Applied default: {key}={default_value}")
+    
+    # Step 8: Validate provider configuration
+    # Use current environment state (includes yaml + defaults + any existing env vars)
     current_config = {k: os.environ.get(k, "") for k in config.keys()}
     _validate_provider_config(current_config)
     
