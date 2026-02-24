@@ -405,56 +405,55 @@ class GCSStore(BaseStore):
         return results
 
 
-def create_search_memory_tool(store: GCSStore):
-    """Create a LangChain tool for searching memory.
-    
-    This tool allows the agent to search past session summaries.
-    
+def create_search_memory_tool(
+    store: GCSStore,
+    namespace: tuple = ("shared", "session_summaries"),
+):
+    """Create a LangChain tool for searching shared team memory.
+
+    The namespace is pre-bound at creation time — the LLM never supplies it.
+    Defaults to a single shared team namespace so all users see the same memory.
+
     Args:
         store: GCSStore instance
-    
+        namespace: GCS namespace tuple to search. Defaults to ("shared", "session_summaries").
+
     Returns:
         LangChain tool function
     """
     from langchain_core.tools import tool
-    
+
     @tool
-    def search_memory(query: str, user_id: str = None) -> str:
-        """Search past conversation summaries by keyword.
-        
-        Use this to recall information from previous conversations.
-        
+    def search_memory(query: str) -> str:
+        """Search past team conversation summaries by keyword.
+
+        Use this to recall context from previous team conversations.
+
         Args:
             query: Keywords to search for
-            user_id: Optional user ID to scope search
-        
+
         Returns:
             Formatted search results
         """
-        if not user_id:
-            return "Error: user_id required for memory search"
-        
-        # Search in session_summaries namespace
         results = store.search(
-            namespace=(user_id, "session_summaries"),
+            namespace=namespace,
             query=query,
             limit=5,
         )
-        
+
         if not results:
             return f"No relevant memories found for query: {query}"
-        
-        # Format results
+
         output = f"Found {len(results)} relevant memories:\n\n"
         for i, item in enumerate(results, 1):
             summary = item.value.get("summary", "No summary")
             topics = item.value.get("key_topics", [])
             timestamp = item.value.get("timestamp", "Unknown time")
-            
+
             output += f"{i}. {summary}\n"
             output += f"   Topics: {', '.join(topics)}\n"
             output += f"   Time: {timestamp}\n\n"
-        
+
         return output
-    
+
     return search_memory

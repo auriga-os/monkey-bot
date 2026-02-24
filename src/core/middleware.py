@@ -49,6 +49,7 @@ class SessionSummaryMiddleware(AgentMiddleware):
         store: BaseStore,
         summary_model: Optional[BaseChatModel] = None,
         min_messages_to_summarize: int = 5,
+        namespace: tuple = ("shared", "session_summaries"),
     ):
         """Initialize SessionSummaryMiddleware.
         
@@ -56,11 +57,14 @@ class SessionSummaryMiddleware(AgentMiddleware):
             store: LangGraph Store for persisting summaries
             summary_model: Model for generating summaries (default: gemini-2.5-flash)
             min_messages_to_summarize: Minimum messages before summarizing
+            namespace: GCS namespace to write summaries into. Defaults to a shared
+                team namespace so all users contribute to the same memory pool.
         """
         super().__init__()
         self.store = store
         self.summary_model = summary_model or init_chat_model("gemini-2.5-flash")
         self.min_messages = min_messages_to_summarize
+        self.namespace = namespace
     
     def after_agent(self, state, runtime) -> dict[str, Any] | None:
         """Generate and store session summary after agent completes.
@@ -104,7 +108,7 @@ class SessionSummaryMiddleware(AgentMiddleware):
             
             # Store ONE summary doc per session in the Store
             self.store.put(
-                namespace=(user_id, "session_summaries"),
+                namespace=self.namespace,
                 key=thread_id,
                 value={
                     "summary": summary,
