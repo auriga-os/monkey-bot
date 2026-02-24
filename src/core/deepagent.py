@@ -182,13 +182,20 @@ def build_deep_agent(
         middleware.append(subagent_mw)
         logger.info(f"Added SubAgentMiddleware with {len(subagents)} subagents")
 
-    # TODO: Support persistent checkpointers for multi-instance deployments:
-    #   - Firestore: custom BaseCheckpointSaver (best fit for GCP/Cloud Run)
-    #   - Postgres: AsyncPostgresSaver from langgraph-checkpoint-postgres
-    #   - Redis: RedisSaver from langgraph-checkpoint-redis
     if checkpointer is None:
-        checkpointer = InMemorySaver()
-        logger.info("Using InMemorySaver for conversation persistence (in-memory only)")
+        checkpoint_backend = os.getenv("CHECKPOINT_BACKEND", "memory")
+        if checkpoint_backend == "firestore":
+            from .firestore_checkpointer import FirestoreCheckpointSaver  # noqa: PLC0415
+            project_id = os.getenv("GCP_PROJECT_ID") or os.getenv("VERTEX_AI_PROJECT_ID")
+            if not project_id:
+                raise ValueError(
+                    "CHECKPOINT_BACKEND=firestore requires GCP_PROJECT_ID or VERTEX_AI_PROJECT_ID"
+                )
+            checkpointer = FirestoreCheckpointSaver(project_id=project_id)
+            logger.info("Using FirestoreCheckpointSaver: project=%s", project_id)
+        else:
+            checkpointer = InMemorySaver()
+            logger.info("Using InMemorySaver for conversation persistence (in-memory only)")
 
     # Step 6: Call create_deep_agent with all params
     agent = create_deep_agent(
