@@ -37,6 +37,7 @@ import logging
 from collections.abc import AsyncIterator, Iterator, Sequence
 from typing import Any
 
+from google.cloud.firestore_v1 import FieldFilter
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import (
     BaseCheckpointSaver,
@@ -155,7 +156,7 @@ class FirestoreCheckpointSaver(BaseCheckpointSaver):
         else:
             from google.cloud.firestore_v1.base_query import BaseQuery  # noqa: PLC0415
             query = (
-                col.where("checkpoint_ns", "==", checkpoint_ns)
+                col.where(filter=FieldFilter("checkpoint_ns", "==", checkpoint_ns))
                 .order_by("created_at", direction=BaseQuery.DESCENDING)
                 .limit(1)
             )
@@ -217,7 +218,7 @@ class FirestoreCheckpointSaver(BaseCheckpointSaver):
 
         col = self._checkpoints_col(thread_id)
         query = (
-            col.where("checkpoint_ns", "==", checkpoint_ns)
+            col.where(filter=FieldFilter("checkpoint_ns", "==", checkpoint_ns))
             .order_by("created_at", direction=BaseQuery.DESCENDING)
         )
         if limit:
