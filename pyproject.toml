@@ -36,11 +36,15 @@ dependencies = [
 gcs = [
     "google-cloud-storage>=2.18.0",
 ]
+firestore = [
+    "google-cloud-firestore>=2.18.0",
+]
 modal = [
     "modal>=0.60.0",
 ]
 all = [
     "emonk[gcs]",
+    "emonk[firestore]",
     "emonk[modal]",
 ]
 dev = [

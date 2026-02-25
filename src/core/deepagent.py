@@ -359,6 +359,12 @@ def _create_schedule_task_tool(scheduler) -> BaseTool:
         """Flexible job payload — accepts any key/value pairs."""
         model_config = ConfigDict(extra='allow')
 
+        @classmethod
+        def model_json_schema(cls, **kwargs):
+            schema = super().model_json_schema(**kwargs)
+            schema.pop("additionalProperties", None)
+            return schema
+
     @tool
     async def schedule_task(
         job_type: str,
