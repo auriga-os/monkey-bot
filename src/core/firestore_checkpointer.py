@@ -33,6 +33,7 @@ inside the class body. Without deferred annotation evaluation,
 from __future__ import annotations
 
 import base64
+import json
 import logging
 from collections.abc import AsyncIterator, Iterator, Sequence
 from typing import Any
@@ -123,8 +124,8 @@ class FirestoreCheckpointSaver(BaseCheckpointSaver):
             "checkpoint_ns": checkpoint_ns,
             "checkpoint_type": type_,
             "checkpoint_data": base64.b64encode(data).decode(),
-            "metadata": metadata,
-            "new_versions": dict(new_versions),
+            "metadata": json.dumps(metadata),
+            "new_versions": json.dumps(dict(new_versions)),
             "parent_checkpoint_id": parent_id,
             "created_at": SERVER_TIMESTAMP,
         })
@@ -194,7 +195,7 @@ class FirestoreCheckpointSaver(BaseCheckpointSaver):
                 }
             },
             checkpoint=checkpoint,
-            metadata=doc_data["metadata"],
+            metadata=json.loads(doc_data["metadata"]) if isinstance(doc_data["metadata"], str) else doc_data["metadata"],
             parent_config=parent_config,
             pending_writes=pending_writes or None,
         )
@@ -249,7 +250,7 @@ class FirestoreCheckpointSaver(BaseCheckpointSaver):
                     }
                 },
                 checkpoint=checkpoint,
-                metadata=data["metadata"],
+                metadata=json.loads(data["metadata"]) if isinstance(data["metadata"], str) else data["metadata"],
                 parent_config=parent_config,
             )
 
