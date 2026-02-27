@@ -124,8 +124,10 @@ class FirestoreCheckpointSaver(BaseCheckpointSaver):
             "checkpoint_ns": checkpoint_ns,
             "checkpoint_type": type_,
             "checkpoint_data": base64.b64encode(data).decode(),
-            "metadata": dict(metadata),
-            "new_versions": dict(new_versions),
+            # Firestore rejects field names with double-underscore prefix/suffix (e.g. __start__).
+            # LangGraph's ChannelVersions uses such keys, so serialize as JSON string instead.
+            "metadata": json.dumps(metadata),
+            "new_versions": json.dumps(dict(new_versions)),
             "parent_checkpoint_id": parent_id,
             "created_at": SERVER_TIMESTAMP,
         })
@@ -155,7 +157,7 @@ class FirestoreCheckpointSaver(BaseCheckpointSaver):
             doc_data = doc.to_dict()
             resolved_id = checkpoint_id
         else:
-            from google.cloud.firestore_v1.base_query import BaseQuery  # noqa: PLC0415
+            from google.cloud.firestore_v1.base_query import BaseQuery 
             query = (
                 col.where(filter=FieldFilter("checkpoint_ns", "==", checkpoint_ns))
                 .order_by("created_at", direction=BaseQuery.DESCENDING)
