@@ -124,7 +124,13 @@ class FirestoreCheckpointSaver(BaseCheckpointSaver):
             "checkpoint_ns": checkpoint_ns,
             "checkpoint_type": type_,
             "checkpoint_data": base64.b64encode(data).decode(),
+<<<<<<< Updated upstream
             "metadata": json.dumps(metadata),
+=======
+            "metadata": dict(metadata),
+            # Firestore rejects field names with double-underscore prefix/suffix (e.g. __start__).
+            # LangGraph's ChannelVersions uses such keys, so serialize as JSON string instead.
+>>>>>>> Stashed changes
             "new_versions": json.dumps(dict(new_versions)),
             "parent_checkpoint_id": parent_id,
             "created_at": SERVER_TIMESTAMP,
