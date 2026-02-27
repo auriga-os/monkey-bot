@@ -8,6 +8,7 @@ All sync failures are non-fatal — agent continues with local state.
 
 import asyncio
 import logging
+import signal
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -151,3 +152,17 @@ class GCSFilesystemSync:
                 pass
         await self.sync_to_gcs()
         logger.info("GCS filesystem sync: closed")
+
+    def register_sigterm_handler(self) -> None:
+        """Register a SIGTERM signal handler that schedules a final sync on shutdown.
+
+        Safe to call from the main thread. The handler creates an asyncio task
+        on the running event loop so sync_to_gcs is awaited before the process exits.
+        """
+        def _handler(signum, frame):
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.create_task(self.close())
+
+        signal.signal(signal.SIGTERM, _handler)
+        logger.info("GCS filesystem sync: SIGTERM handler registered")

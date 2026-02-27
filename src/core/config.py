@@ -11,6 +11,7 @@ This module handles environment detection and secret loading for deployments.
 
 import logging
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Any
 
@@ -80,12 +81,65 @@ CONFIG_MAPPING = {
     # Azure-specific (future)
     "azure.subscription_id": "AZURE_SUBSCRIPTION_ID",
     "azure.resource_group": "AZURE_RESOURCE_GROUP",
+    # Heartbeat
+    "heartbeat.enabled":                   "HEARTBEAT_ENABLED",
+    "heartbeat.cron":                      "HEARTBEAT_CRON",
+    "heartbeat.active_hours.start":        "HEARTBEAT_ACTIVE_HOURS_START",
+    "heartbeat.active_hours.end":          "HEARTBEAT_ACTIVE_HOURS_END",
+    "heartbeat.active_hours.timezone":     "HEARTBEAT_ACTIVE_HOURS_TZ",
+    "heartbeat.target":                    "HEARTBEAT_TARGET",
+    # Voice
+    "voice.enabled":                       "VOICE_ENABLED",
+    "voice.speech_to_text.language_code":  "VOICE_STT_LANGUAGE_CODE",
+    "voice.speech_to_text.model":          "VOICE_STT_MODEL",
+    "voice.text_to_speech.voice_name":     "VOICE_TTS_VOICE_NAME",
+    "voice.text_to_speech.audio_encoding": "VOICE_TTS_AUDIO_ENCODING",
 }
 
 
 class ConfigError(Exception):
     """Configuration error with actionable message."""
     pass
+
+
+@dataclass
+class HeartbeatConfig:
+    """Configuration for heartbeat functionality.
+    
+    Attributes:
+        enabled: Whether heartbeat is enabled
+        cron: Cron expression for heartbeat schedule
+        active_hours_start: Start time for active hours (HH:MM format)
+        active_hours_end: End time for active hours (HH:MM format)
+        active_hours_timezone: Timezone for active hours
+        target: Target for heartbeat messages (e.g., "last_active")
+        heartbeat_md_path: Path to HEARTBEAT.md file, None for auto-detect
+    """
+    enabled: bool = True
+    cron: str = "*/30 * * * *"
+    active_hours_start: str = "09:00"
+    active_hours_end: str = "18:00"
+    active_hours_timezone: str = "America/New_York"
+    target: str = "last_active"
+    heartbeat_md_path: str | None = None
+
+
+@dataclass
+class VoiceConfig:
+    """Configuration for voice functionality (STT/TTS).
+    
+    Attributes:
+        enabled: Whether voice is enabled
+        language_code: Language code for speech recognition
+        stt_model: Speech-to-text model identifier
+        tts_voice_name: Text-to-speech voice name
+        tts_audio_encoding: Audio encoding format for TTS output
+    """
+    enabled: bool = True
+    language_code: str = "en-US"
+    stt_model: str = "latest_long"
+    tts_voice_name: str = "en-US-Journey-F"
+    tts_audio_encoding: str = "OGG_OPUS"
 
 
 def _flatten_yaml_to_env(yaml_dict: Dict[str, Any]) -> Dict[str, str]:
@@ -700,3 +754,55 @@ def get_system_prompt(prompt_file_path: str | None = None) -> str:
     except Exception as e:
         logger.error(f"❌ Failed to load system prompt from {prompt_file}: {e}")
         return ""
+
+
+def load_heartbeat_config() -> HeartbeatConfig | None:
+    """Return HeartbeatConfig from env vars, or None if HEARTBEAT_ENABLED != 'true'.
+    
+    Reads from os.environ (populated by load_bot_config()).
+    
+    Returns:
+        HeartbeatConfig instance if enabled, None otherwise
+        
+    Example:
+        >>> os.environ["HEARTBEAT_ENABLED"] = "true"
+        >>> config = load_heartbeat_config()
+        >>> config.cron
+        '*/30 * * * *'
+    """
+    if os.getenv("HEARTBEAT_ENABLED", "false").lower() != "true":
+        return None
+    return HeartbeatConfig(
+        enabled=True,
+        cron=os.getenv("HEARTBEAT_CRON", "*/30 * * * *"),
+        active_hours_start=os.getenv("HEARTBEAT_ACTIVE_HOURS_START", "09:00"),
+        active_hours_end=os.getenv("HEARTBEAT_ACTIVE_HOURS_END", "18:00"),
+        active_hours_timezone=os.getenv("HEARTBEAT_ACTIVE_HOURS_TZ", "America/New_York"),
+        target=os.getenv("HEARTBEAT_TARGET", "last_active"),
+        heartbeat_md_path=os.getenv("HEARTBEAT_MD_PATH") or None,
+    )
+
+
+def load_voice_config() -> VoiceConfig | None:
+    """Return VoiceConfig from env vars, or None if VOICE_ENABLED != 'true'.
+    
+    Reads from os.environ (populated by load_bot_config()).
+    
+    Returns:
+        VoiceConfig instance if enabled, None otherwise
+        
+    Example:
+        >>> os.environ["VOICE_ENABLED"] = "true"
+        >>> config = load_voice_config()
+        >>> config.language_code
+        'en-US'
+    """
+    if os.getenv("VOICE_ENABLED", "false").lower() != "true":
+        return None
+    return VoiceConfig(
+        enabled=True,
+        language_code=os.getenv("VOICE_STT_LANGUAGE_CODE", "en-US"),
+        stt_model=os.getenv("VOICE_STT_MODEL", "latest_long"),
+        tts_voice_name=os.getenv("VOICE_TTS_VOICE_NAME", "en-US-Journey-F"),
+        tts_audio_encoding=os.getenv("VOICE_TTS_AUDIO_ENCODING", "OGG_OPUS"),
+    )
