@@ -7,6 +7,7 @@ agents with monkey-bot's opinionated defaults on top of LangChain Deep Agents.
 import logging
 import os
 from collections.abc import Callable, Sequence
+from datetime import UTC
 from pathlib import Path
 
 import yaml
@@ -47,6 +48,10 @@ def build_deep_agent(
     checkpointer: object | None = None,
     summarization_trigger: tuple[str, float] = ("fraction", 0.85),
     summarization_keep: tuple[str, float] = ("fraction", 0.10),
+    soul_file: "str | None" = None,
+    tools_file: "str | None" = None,
+    heartbeat: "object | None" = None,
+    voice: "object | None" = None,
 ):
     """Build a deep agent with monkey-bot's opinionated defaults.
 
@@ -145,6 +150,38 @@ def build_deep_agent(
                 "filesystem sync disabled"
             )
 
+    # Step 3b: Load Layer 0 identity and context files
+    _soul_path = Path(soul_file) if soul_file else Path.cwd() / "SOUL.md"
+    _tools_path = Path(tools_file) if tools_file else Path.cwd() / "TOOLS.md"
+    _memory_dir = os.getenv("MEMORY_DIR", "./data/memory")
+    _user_path = Path(_memory_dir) / "USER.md"
+
+    soul_content = _load_text_file(_soul_path, "SOUL")
+    user_content = _load_text_file(_user_path, "USER")
+    tools_content = _load_text_file(_tools_path, "TOOLS")
+
+    # Step 3c: Token budget logging and warning
+    soul_tokens = _estimate_tokens(soul_content)
+    user_tokens = _estimate_tokens(user_content)
+    tools_tokens = _estimate_tokens(tools_content)
+    total_new_tokens = soul_tokens + user_tokens + tools_tokens
+
+    if soul_tokens > 500:
+        logger.warning(
+            "SOUL.md exceeds token budget",
+            extra={"soul_tokens": soul_tokens, "budget": 500}
+        )
+
+    logger.info(
+        "Layer 0 token usage",
+        extra={
+            "soul_tokens": soul_tokens,
+            "user_tokens": user_tokens,
+            "tools_tokens": tools_tokens,
+            "total_new_tokens": total_new_tokens,
+        }
+    )
+
     # Step 4: Compose 3-layer system prompt
     full_system_prompt = compose_system_prompt(
         skills_manifest=skills_manifest,
@@ -154,6 +191,9 @@ def build_deep_agent(
         has_memory=store is not None,
         has_backend=backend is not None,
         has_filesystem_memory=fs_sync is not None,
+        soul_content=soul_content,
+        user_content=user_content,
+        tools_content=tools_content,
     )
 
     logger.info(
@@ -197,6 +237,42 @@ def build_deep_agent(
             checkpointer = InMemorySaver()
             logger.info("Using InMemorySaver for conversation persistence (in-memory only)")
 
+    # Step 5b: Register HeartbeatHandler if heartbeat config provided
+    _heartbeat_handler_cls = None
+    try:
+        from .scheduler.handlers import HeartbeatHandler as _HBCls
+        _heartbeat_handler_cls = _HBCls
+    except ImportError:
+        pass
+
+    if heartbeat is not None:
+        if scheduler is None:
+            logger.warning(
+                "heartbeat config provided but scheduler is None — skipping HeartbeatHandler registration"
+            )
+        elif _heartbeat_handler_cls is None:
+            logger.warning("HeartbeatHandler not available (scheduler.handlers not importable)")
+        else:
+            hb_handler = _heartbeat_handler_cls(agent=None, config=heartbeat)
+            scheduler.register_handler("heartbeat", hb_handler)
+            logger.info("Registered HeartbeatHandler with scheduler")
+
+    # Step 5c: Prepare VoiceHandler if voice config provided
+    _voice_handler_cls = None
+    try:
+        from ..voice.handler import VoiceHandler as _VHCls
+        _voice_handler_cls = _VHCls
+    except ImportError:
+        pass
+
+    voice_handler = None
+    if voice is not None:
+        if _voice_handler_cls is None:
+            logger.warning("VoiceHandler not available (voice module not importable)")
+        else:
+            voice_handler = _voice_handler_cls(config=voice)
+            logger.info("Created VoiceHandler instance")
+
     # Step 6: Call create_deep_agent with all params
     agent = create_deep_agent(
         model=model,
@@ -218,6 +294,9 @@ def build_deep_agent(
         )
     else:
         agent.fs_sync = None
+
+    # Attach voice_handler to agent
+    agent.voice_handler = voice_handler
 
     logger.info(
         "Deep agent created",
@@ -350,7 +429,7 @@ def _create_schedule_task_tool(scheduler) -> BaseTool:
     Returns:
         LangChain tool function
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from langchain_core.tools import tool
     from pydantic import BaseModel, ConfigDict
@@ -396,7 +475,7 @@ def _create_schedule_task_tool(scheduler) -> BaseTool:
             schedule_at = datetime.fromisoformat(schedule_at_iso.replace("Z", "+00:00"))
             # Ensure timezone-aware datetime
             if schedule_at.tzinfo is None:
-                schedule_at = schedule_at.replace(tzinfo=timezone.utc)
+                schedule_at = schedule_at.replace(tzinfo=UTC)
                 logger.warning(
                     f"Received timezone-naive datetime '{schedule_at_iso}', "
                     f"assuming UTC: {schedule_at.isoformat()}"
@@ -413,3 +492,31 @@ def _create_schedule_task_tool(scheduler) -> BaseTool:
         return f"Task scheduled successfully. Job ID: {job_id}"
 
     return schedule_task
+
+
+def _load_text_file(path: "str | Path", label: str) -> str:
+    """Read file content; return '' and log DEBUG if missing. Never raises.
+
+    Args:
+        path: Path to the file to read
+        label: Human-readable label for logging (e.g., 'SOUL', 'USER', 'TOOLS')
+
+    Returns:
+        File content as string, or empty string if file not found or unreadable
+    """
+    try:
+        p = Path(path)
+        if not p.exists():
+            logger.debug("File not found: label=%s path=%s", label, str(path))
+            return ""
+        content = p.read_text(encoding="utf-8")
+        logger.debug("Loaded file: label=%s path=%s chars=%d", label, str(path), len(content))
+        return content
+    except Exception as e:
+        logger.debug("Failed to load file: label=%s path=%s error=%s", label, str(path), str(e))
+        return ""
+
+
+def _estimate_tokens(text: str) -> int:
+    """Rough token estimate: len(text) // 4."""
+    return len(text) // 4

@@ -15,12 +15,13 @@ import json
 import logging
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from fastapi import FastAPI, HTTPException, Request, status
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, status
+from fastapi.responses import JSONResponse, Response
 
 from src.gateway.interfaces import AgentCoreInterface, AgentError
+from src.gateway.mocks import MockAgentCore
 from src.gateway.models import (
     CronTickResponse,
     GoogleChatResponse,
@@ -28,7 +29,6 @@ from src.gateway.models import (
     GoogleChatWorkspaceResponse,
     HealthCheckResponse,
 )
-from src.gateway.mocks import MockAgentCore
 from src.gateway.pii_filter import filter_google_chat_pii
 
 # Configure structured JSON logging
@@ -46,7 +46,7 @@ def log_structured(level: str, message: str, **extra: str | int) -> None:
         **extra: Additional fields to include in log entry
     """
     log_entry = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "severity": level,
         "message": message,
         "component": "gateway",
@@ -65,6 +65,9 @@ app = FastAPI(
 # For Sprint 1: Use mock Agent Core
 # Story 4 (Integration) will wire real Agent Core implementation
 agent_core: AgentCoreInterface = MockAgentCore()
+
+SUPPORTED_VOICE_MIME_TYPES = {"audio/ogg", "audio/webm", "audio/mp4"}
+_VOICE_MAX_AUDIO_BYTES = int(os.getenv("VOICE_MAX_AUDIO_BYTES", str(10 * 1024 * 1024)))
 
 
 def truncate_response(text: str, max_length: int = 4000) -> str:
@@ -235,7 +238,7 @@ async def webhook(payload: GoogleChatWebhook):
 
     # Return response in appropriate format based on GOOGLE_CHAT_FORMAT env var
     chat_format = os.getenv("GOOGLE_CHAT_FORMAT", "workspace_addon")
-    
+
     if chat_format == "workspace_addon":
         return GoogleChatWorkspaceResponse.from_text(response_text)
     else:
@@ -243,47 +246,212 @@ async def webhook(payload: GoogleChatWebhook):
         return GoogleChatResponse(text=response_text)
 
 
+@app.post("/voice", status_code=status.HTTP_200_OK)
+async def voice(
+    audio: UploadFile = File(...),  # noqa: B008
+    mime_type: str = Form(default="audio/ogg"),  # noqa: B008
+    user_email: str = Form(...),  # noqa: B008
+    space_name: str = Form(default=""),  # noqa: B008
+):
+    """Handle voice message: STT → agent → TTS → audio response.
+
+    Process flow:
+    1. Check VOICE_ENABLED (at request time for hot-toggle)
+    2. Validate user_email against ALLOWED_USERS
+    3. Validate mime_type
+    4. Read and size-check audio bytes
+    5. Transcribe audio via VoiceHandler.transcribe()
+    6. Invoke agent with transcript
+    7. Synthesize response via VoiceHandler.synthesize()
+    8. Return OGG_OPUS audio with X-Transcript-In/Out/Trace-Id headers
+
+    Returns:
+        200: OGG_OPUS audio bytes
+        400: Missing audio content
+        401: Unauthorized user
+        404: Voice not enabled
+        413: Audio too large
+        415: Unsupported mime_type
+        422: Empty transcript
+        503: STT/TTS API unavailable
+        500: Agent processing failed
+    """
+    trace_id = str(uuid.uuid4())
+
+    # Check VOICE_ENABLED at request time (allows hot-toggle without redeploy)
+    if os.getenv("VOICE_ENABLED", "false").lower() != "true":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Voice endpoint not enabled",
+        )
+
+    # Allowlist check
+    allowed_users_str = os.getenv("ALLOWED_USERS", "")
+    allowed_users = [e.strip() for e in allowed_users_str.split(",") if e.strip()]
+    if user_email not in allowed_users:
+        log_structured("WARNING", "Unauthorized voice attempt", trace_id=trace_id)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthorized user",
+        )
+
+    # Validate mime_type
+    if mime_type not in SUPPORTED_VOICE_MIME_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=(
+                f"Unsupported mime_type: {mime_type}. "
+                f"Supported: {sorted(SUPPORTED_VOICE_MIME_TYPES)}"
+            ),
+        )
+
+    # Read audio bytes
+    audio_bytes = await audio.read()
+    if not audio_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing audio content",
+        )
+
+    # Size check
+    max_bytes = int(os.getenv("VOICE_MAX_AUDIO_BYTES", str(10 * 1024 * 1024)))
+    if len(audio_bytes) > max_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Audio file too large",
+        )
+
+    log_structured(
+        "INFO",
+        "Voice audio received",
+        trace_id=trace_id,
+        audio_length_bytes=len(audio_bytes),
+        mime_type=mime_type,
+    )
+
+    # Get VoiceHandler from agent
+    voice_handler = getattr(agent_core, "voice_handler", None)
+    if voice_handler is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Voice handler not initialized",
+        )
+
+    # STT: transcribe audio
+    try:
+
+        transcript_in = await voice_handler.transcribe(audio_bytes, mime_type)
+    except Exception as e:
+        err_str = str(e).lower()
+        if "empty transcript" in err_str or "no results" in err_str:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Empty transcript — no speech detected",
+            ) from e
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Speech-to-text service unavailable",
+        ) from e
+
+    # Agent invocation
+    try:
+        if hasattr(agent_core, "ainvoke"):
+            result = await agent_core.ainvoke(
+                {"messages": [{"role": "user", "content": transcript_in}]},
+                config={"configurable": {"thread_id": user_email}},
+            )
+            response_msg = result["messages"][-1]
+            response_text = (
+                response_msg.content
+                if hasattr(response_msg, "content")
+                else str(response_msg)
+            )
+        else:
+            response_text = await agent_core.process_message(
+                user_id=user_email,
+                content=transcript_in,
+                trace_id=trace_id,
+            )
+    except Exception as e:
+        log_structured(
+            "ERROR",
+            f"Agent failed during voice processing: {e}",
+            trace_id=trace_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Agent processing failed",
+        ) from e
+
+    # TTS: synthesize response
+    try:
+        audio_out = await voice_handler.synthesize(response_text)
+    except Exception as e:
+        log_structured("ERROR", f"TTS synthesis failed: {e}", trace_id=trace_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Text-to-speech service unavailable",
+        ) from e
+
+    log_structured(
+        "INFO",
+        "Voice request completed",
+        trace_id=trace_id,
+        response_length=len(response_text),
+    )
+
+    return Response(
+        content=audio_out,
+        media_type="audio/ogg; codecs=opus",
+        headers={
+            "X-Transcript-In": transcript_in[:500],
+            "X-Transcript-Out": response_text[:500],
+            "X-Trace-Id": trace_id,
+        },
+    )
+
+
 @app.post("/cron/tick", response_model=CronTickResponse, status_code=status.HTTP_200_OK)
 async def cron_tick(request: Request) -> CronTickResponse:
     """
     Handle Cloud Scheduler tick for background job execution.
-    
+
     This endpoint is called by Cloud Scheduler at a configured interval
     (e.g., every minute) to check for and execute due jobs. It runs a single
     scheduler cycle and returns quickly with summary metrics.
-    
+
     Authentication:
     - Cloud Scheduler uses OIDC token with service account
     - For MVP, also supports X-Cloudscheduler header from Cloud Scheduler
     - In production, validate OIDC audience/issuer via Cloud Run IAM
-    
+
     Process flow:
     1. Authenticate request (OIDC token or scheduler header)
     2. Run single scheduler tick (check due jobs, execute)
     3. Return metrics (jobs checked, executed, succeeded, failed)
-    
+
     Returns:
         CronTickResponse with execution metrics
-        
+
     Raises:
         HTTPException(401): If authentication fails
         HTTPException(500): If scheduler execution fails
     """
     trace_id = str(uuid.uuid4())
-    start_time = datetime.now(timezone.utc)
-    
+    start_time = datetime.now(UTC)
+
     log_structured(
         "INFO",
         "Cron tick received",
         trace_id=trace_id,
     )
-    
+
     # Authentication: Check for Cloud Scheduler headers or OIDC token
     # For MVP: Accept X-Cloudscheduler header (set by Cloud Scheduler)
     # TODO: Add OIDC token validation for production
     scheduler_header = request.headers.get("X-Cloudscheduler")
     cron_secret = os.getenv("CRON_SECRET")
-    
+
     # Allow requests with Cloud Scheduler header OR matching secret
     if not scheduler_header and cron_secret:
         # Check for secret-based auth as fallback
@@ -298,7 +466,7 @@ async def cron_tick(request: Request) -> CronTickResponse:
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Unauthorized: Missing authentication",
             )
-        
+
         token = auth_header.split(" ")[1]
         if token != cron_secret:
             log_structured(
@@ -310,7 +478,7 @@ async def cron_tick(request: Request) -> CronTickResponse:
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Unauthorized: Invalid token",
             )
-    
+
     # Execute scheduler tick
     try:
         # Check if agent_core has scheduler (it should if properly initialized)
@@ -324,12 +492,12 @@ async def cron_tick(request: Request) -> CronTickResponse:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Scheduler not initialized",
             )
-        
+
         # Run single tick (will add this method to scheduler)
         tick_result = await agent_core.scheduler.run_tick()
-        
-        execution_time_ms = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
-        
+
+        execution_time_ms = int((datetime.now(UTC) - start_time).total_seconds() * 1000)
+
         metrics = {
             "jobs_checked": tick_result.get("jobs_checked", 0),
             "jobs_due": tick_result.get("jobs_due", 0),
@@ -338,24 +506,24 @@ async def cron_tick(request: Request) -> CronTickResponse:
             "jobs_failed": tick_result.get("jobs_failed", 0),
             "execution_time_ms": execution_time_ms,
         }
-        
+
         log_structured(
             "INFO",
             "Cron tick completed successfully",
             trace_id=trace_id,
             **metrics,
         )
-        
+
         return CronTickResponse(
             status="success",
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
             trace_id=trace_id,
             metrics=metrics,
         )
-        
+
     except Exception as e:
-        execution_time_ms = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
-        
+        execution_time_ms = int((datetime.now(UTC) - start_time).total_seconds() * 1000)
+
         log_structured(
             "ERROR",
             f"Cron tick failed: {str(e)}",
@@ -363,10 +531,10 @@ async def cron_tick(request: Request) -> CronTickResponse:
             error_type=type(e).__name__,
             execution_time_ms=execution_time_ms,
         )
-        
+
         return CronTickResponse(
             status="error",
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
             trace_id=trace_id,
             metrics={
                 "error": str(e),
@@ -402,7 +570,7 @@ async def health() -> HealthCheckResponse:
 
     return HealthCheckResponse(
         status="healthy",
-        timestamp=datetime.now(timezone.utc).isoformat(),
+        timestamp=datetime.now(UTC).isoformat(),
         checks=checks,
     )
 

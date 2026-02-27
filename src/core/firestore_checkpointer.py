@@ -124,8 +124,8 @@ class FirestoreCheckpointSaver(BaseCheckpointSaver):
             "checkpoint_ns": checkpoint_ns,
             "checkpoint_type": type_,
             "checkpoint_data": base64.b64encode(data).decode(),
-            "metadata": json.dumps(metadata),
-            "new_versions": json.dumps(dict(new_versions)),
+            "metadata": dict(metadata),
+            "new_versions": dict(new_versions),
             "parent_checkpoint_id": parent_id,
             "created_at": SERVER_TIMESTAMP,
         })

@@ -21,13 +21,6 @@ def sync(tmp_path):
     )
 
 
-def _mock_proc(returncode: int = 0, stdout: bytes = b"", stderr: bytes = b""):
-    proc = AsyncMock()
-    proc.returncode = returncode
-    proc.communicate = AsyncMock(return_value=(stdout, stderr))
-    return proc
-
-
 class TestGcsUri:
     def test_gcs_uri_includes_trailing_slash_on_prefix(self, tmp_path):
         s = GCSFilesystemSync("my-bucket", tmp_path, gcs_prefix="mem")
@@ -43,60 +36,70 @@ class TestSyncFromGCS:
     async def test_creates_local_dir_if_missing(self, tmp_path):
         local_dir = tmp_path / "nonexistent" / "memory"
         s = GCSFilesystemSync("bucket", local_dir=local_dir)
-        with patch("asyncio.create_subprocess_exec", return_value=_mock_proc(0)):
+        mock_client = MagicMock()
+        mock_client.list_blobs.return_value = []
+        with patch.object(s, "_get_client", return_value=mock_client):
             await s.sync_from_gcs()
         assert local_dir.exists()
 
     @pytest.mark.asyncio
     async def test_calls_gsutil_rsync_with_gcs_as_source(self, sync):
-        with patch("asyncio.create_subprocess_exec", return_value=_mock_proc(0)) as mock_exec:
+        """sync_from_gcs pulls from GCS bucket with correct prefix."""
+        mock_client = MagicMock()
+        mock_client.list_blobs.return_value = []
+        with patch.object(sync, "_get_client", return_value=mock_client):
             await sync.sync_from_gcs()
-        args = mock_exec.call_args[0]
-        assert args[0] == "gsutil"
-        assert "-m" in args
-        assert "rsync" in args
-        assert "-r" in args
-        assert "gs://test-bucket/memory/" in args
+        mock_client.list_blobs.assert_called_once_with("test-bucket", prefix="memory/")
 
     @pytest.mark.asyncio
     async def test_gcs_is_source_not_destination(self, sync):
-        """GCS URI must appear before local_dir in rsync for pull."""
-        with patch("asyncio.create_subprocess_exec", return_value=_mock_proc(0)) as mock_exec:
+        """Pull downloads FROM GCS (list_blobs + download_to_filename), not upload."""
+        mock_client = MagicMock()
+        mock_blob = MagicMock()
+        mock_blob.name = "memory/file.txt"
+        mock_client.list_blobs.return_value = [mock_blob]
+        sync.local_dir.mkdir(parents=True, exist_ok=True)
+        with patch.object(sync, "_get_client", return_value=mock_client):
             await sync.sync_from_gcs()
-        args = list(mock_exec.call_args[0])
-        gcs_idx = next(i for i, a in enumerate(args) if a.startswith("gs://"))
-        local_idx = next(i for i, a in enumerate(args) if str(sync.local_dir) in a)
-        assert gcs_idx < local_idx
+        mock_blob.download_to_filename.assert_called_once()
+        mock_client.bucket.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_non_fatal_on_nonzero_exit(self, sync):
-        with patch("asyncio.create_subprocess_exec", return_value=_mock_proc(1, stderr=b"err")):
+        with patch.object(sync, "_get_client", side_effect=Exception("GCS error")):
             await sync.sync_from_gcs()  # must not raise
 
     @pytest.mark.asyncio
     async def test_non_fatal_when_gsutil_not_found(self, sync):
-        with patch("asyncio.create_subprocess_exec", side_effect=FileNotFoundError):
+        with patch.object(sync, "_get_client", side_effect=FileNotFoundError):
             await sync.sync_from_gcs()  # must not raise
 
 
 class TestSyncToGCS:
     @pytest.mark.asyncio
     async def test_calls_gsutil_rsync_with_gcs_as_destination(self, sync):
-        with patch("asyncio.create_subprocess_exec", return_value=_mock_proc(0)) as mock_exec:
+        """sync_to_gcs uploads local files TO GCS bucket."""
+        sync.local_dir.mkdir(parents=True, exist_ok=True)
+        (sync.local_dir / "test.txt").write_text("hello")
+
+        mock_client = MagicMock()
+        mock_bucket = MagicMock()
+        mock_blob = MagicMock()
+        mock_bucket.blob.return_value = mock_blob
+        mock_client.bucket.return_value = mock_bucket
+        with patch.object(sync, "_get_client", return_value=mock_client):
             await sync.sync_to_gcs()
-        args = list(mock_exec.call_args[0])
-        gcs_idx = next(i for i, a in enumerate(args) if a.startswith("gs://"))
-        local_idx = next(i for i, a in enumerate(args) if str(sync.local_dir) in a)
-        assert local_idx < gcs_idx
+        mock_client.bucket.assert_called_once_with("test-bucket")
+        mock_blob.upload_from_filename.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_non_fatal_on_nonzero_exit(self, sync):
-        with patch("asyncio.create_subprocess_exec", return_value=_mock_proc(1, stderr=b"err")):
+        with patch.object(sync, "_get_client", side_effect=Exception("GCS error")):
             await sync.sync_to_gcs()  # must not raise
 
     @pytest.mark.asyncio
     async def test_non_fatal_when_gsutil_not_found(self, sync):
-        with patch("asyncio.create_subprocess_exec", side_effect=FileNotFoundError):
+        with patch.object(sync, "_get_client", side_effect=FileNotFoundError):
             await sync.sync_to_gcs()  # must not raise
 
 
