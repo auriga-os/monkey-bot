@@ -143,6 +143,7 @@ async def test_process_message_error_handling():
         model=FailingModel(),
         tools=[mock_tool],
         user_system_prompt="",
+        middleware=[],
     )
     
     with pytest.raises(AgentError) as exc_info:
@@ -188,6 +189,7 @@ async def test_build_agent_with_custom_prompt():
         model=TestModel(),
         tools=[search_tool],
         user_system_prompt="You are a helpful marketing assistant.",
+        middleware=[],
     )
     
     assert isinstance(agent, AgentWrapper)

@@ -268,6 +268,42 @@ class CronScheduler:
         self._job_handlers[job_type] = handler
         logger.info(f"Registered handler for job type: {job_type}")
 
+    async def seed_heartbeat_job(
+        self,
+        cron: str,
+        bot_root: str,
+        space_name: str | None = None,
+    ) -> str | None:
+        """Idempotent heartbeat job seeding.
+        
+        Returns existing job_id if a pending heartbeat job already exists,
+        otherwise creates a new heartbeat job.
+        
+        Args:
+            cron: Cron expression (e.g., "*/30 * * * *")
+            bot_root: Bot root directory path
+            space_name: Optional Google Chat space name for routing
+            
+        Returns:
+            Job ID if created or found, None if scheduling failed
+        """
+        # Check for existing pending heartbeat job (idempotency)
+        for job in self.jobs:
+            if job.get("job_type") == "heartbeat" and job.get("status") == "pending":
+                logger.info("Heartbeat job already exists: id=%s", job["id"])
+                return job["id"]
+
+        # Schedule next heartbeat 30 minutes from now
+        schedule_at = datetime.now(timezone.utc) + timedelta(minutes=30)
+
+        job_id = await self.schedule_job(
+            job_type="heartbeat",
+            schedule_at=schedule_at,
+            payload={"bot_root": bot_root, "space_name": space_name, "cron": cron},
+        )
+        logger.info("Seeded heartbeat job: id=%s cron=%s", job_id, cron)
+        return job_id
+
     async def _check_and_execute_jobs(self):
         """Check for due jobs and execute them."""
         now = datetime.now(timezone.utc)
