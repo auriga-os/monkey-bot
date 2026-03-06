@@ -108,3 +108,148 @@ class TestConfigMappingExtensions:
         cfg_mod._config_loaded = False
         load_bot_config()
         cfg_mod._config_loaded = False
+
+
+class TestVertexAnthropicProvider:
+    """Tests for vertex_anthropic provider support."""
+
+    def test_get_model_vertex_anthropic_happy_path(self, monkeypatch):
+        """Test successful initialization of ChatAnthropicVertex with all required env vars."""
+        from unittest.mock import MagicMock, patch
+
+        from src.core.config import get_model
+
+        # Set up environment
+        monkeypatch.setenv("GCP_PROJECT_ID", "test-project")
+        monkeypatch.setenv("VERTEX_AI_LOCATION", "us-central1")
+
+        # Mock the ChatAnthropicVertex class
+        mock_chat_anthropic = MagicMock()
+        with patch(
+            "langchain_google_vertexai.model_garden.ChatAnthropicVertex",
+            return_value=mock_chat_anthropic,
+        ) as mock_class:
+            model = get_model(
+                provider="vertex_anthropic",
+                model_name="claude-3-5-sonnet@20240620",
+                temperature=0.5,
+                max_tokens=4096,
+            )
+
+            # Verify the model was created
+            assert model == mock_chat_anthropic
+
+            # Verify constructor was called with correct args
+            mock_class.assert_called_once_with(
+                model_name="claude-3-5-sonnet@20240620",
+                project="test-project",
+                location="us-central1",
+                temperature=0.5,
+                max_tokens=4096,
+            )
+
+    def test_get_model_vertex_anthropic_missing_project(self, monkeypatch):
+        """Test that ValueError is raised when GCP_PROJECT_ID is not set."""
+        from src.core.config import get_model
+
+        # Clear any project env vars
+        monkeypatch.delenv("GCP_PROJECT_ID", raising=False)
+        monkeypatch.delenv("VERTEX_AI_PROJECT_ID", raising=False)
+
+        # Mock the import to succeed
+        from unittest.mock import MagicMock, patch
+
+        with patch("langchain_google_vertexai.model_garden.ChatAnthropicVertex", MagicMock()):
+            try:
+                get_model(provider="vertex_anthropic", model_name="claude-3-5-sonnet@20240620")
+                assert False, "Expected ValueError to be raised"
+            except ValueError as e:
+                assert "vertex_anthropic provider requires GCP_PROJECT_ID" in str(e)
+                assert "Set gcp.project_id in bot.yaml" in str(e)
+
+    def test_get_model_vertex_anthropic_missing_import(self, monkeypatch):
+        """Test that ImportError is raised when anthropic[vertex] is not installed."""
+        from src.core.config import get_model
+
+        monkeypatch.setenv("GCP_PROJECT_ID", "test-project")
+
+        # Mock the import to fail
+        from unittest.mock import patch
+
+        with patch.dict("sys.modules", {"langchain_google_vertexai.model_garden": None}):
+            with patch(
+                "builtins.__import__",
+                side_effect=ImportError("No module named 'langchain_google_vertexai'"),
+            ):
+                try:
+                    get_model(provider="vertex_anthropic", model_name="claude-3-5-sonnet@20240620")
+                    assert False, "Expected ImportError to be raised"
+                except ImportError as e:
+                    assert "anthropic[vertex] is required" in str(e)
+                    assert "pip install 'anthropic[vertex]'" in str(e)
+
+    def test_get_model_vertex_anthropic_default_location(self, monkeypatch):
+        """Test that us-east5 is used as default location when VERTEX_AI_LOCATION is not set."""
+        from unittest.mock import MagicMock, patch
+
+        from src.core.config import get_model
+
+        # Set up environment with project but no location
+        monkeypatch.setenv("GCP_PROJECT_ID", "test-project")
+        monkeypatch.delenv("VERTEX_AI_LOCATION", raising=False)
+
+        # Mock the ChatAnthropicVertex class
+        mock_chat_anthropic = MagicMock()
+        with patch(
+            "langchain_google_vertexai.model_garden.ChatAnthropicVertex",
+            return_value=mock_chat_anthropic,
+        ) as mock_class:
+            get_model(
+                provider="vertex_anthropic",
+                model_name="claude-3-5-sonnet@20240620",
+                temperature=0.7,
+                max_tokens=8192,
+            )
+
+            # Verify default location was used
+            mock_class.assert_called_once_with(
+                model_name="claude-3-5-sonnet@20240620",
+                project="test-project",
+                location="us-east5",
+                temperature=0.7,
+                max_tokens=8192,
+            )
+
+    def test_validate_provider_config_vertex_anthropic_accepted(self, monkeypatch):
+        """Test that vertex_anthropic is accepted as a valid provider."""
+        from src.core.config import _validate_provider_config
+
+        config = {
+            "MODEL_PROVIDER": "vertex_anthropic",
+            "GCP_PROJECT_ID": "test-project",
+            "MEMORY_BACKEND": "local",
+            "SCHEDULER_STORAGE": "json",
+            "SECRETS_PROVIDER": "env",
+        }
+
+        # Should not raise any exception
+        _validate_provider_config(config)
+
+    def test_validate_provider_config_vertex_anthropic_no_project(self, monkeypatch):
+        """Test that ConfigError is raised when vertex_anthropic is used without GCP_PROJECT_ID."""
+        from src.core.config import ConfigError, _validate_provider_config
+
+        config = {
+            "MODEL_PROVIDER": "vertex_anthropic",
+            "MEMORY_BACKEND": "local",
+            "SCHEDULER_STORAGE": "json",
+            "SECRETS_PROVIDER": "env",
+        }
+
+        try:
+            _validate_provider_config(config)
+            assert False, "Expected ConfigError to be raised"
+        except ConfigError as e:
+            assert "model.provider is set to 'vertex_anthropic'" in str(e)
+            assert "gcp.project_id is not configured" in str(e)
+            assert "Add 'gcp.project_id: your-project-id' to bot.yaml" in str(e)

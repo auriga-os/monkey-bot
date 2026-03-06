@@ -46,11 +46,15 @@ voice = [
     "google-cloud-speech>=2.27.0",
     "google-cloud-texttospeech>=2.17.0",
 ]
+vertex-anthropic = [
+    "anthropic[vertex]>=0.40.0",
+]
 all = [
     "emonk[gcs]",
     "emonk[firestore]",
     "emonk[modal]",
     "emonk[voice]",
+    "emonk[vertex-anthropic]",
 ]
 dev = [
     "pytest>=8.3.0",

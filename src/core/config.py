@@ -196,7 +196,7 @@ def _validate_provider_config(config: Dict[str, str]) -> None:
     SUPPORTED_MEMORY_BACKENDS = {"local", "gcs"}
     SUPPORTED_SCHEDULER_STORAGE = {"json", "firestore"}
     SUPPORTED_SECRETS_PROVIDERS = {"env", "gcp_secret_manager"}
-    SUPPORTED_MODEL_PROVIDERS = {"google_vertexai", "openai", "anthropic"}
+    SUPPORTED_MODEL_PROVIDERS = {"google_vertexai", "openai", "anthropic", "vertex_anthropic"}
     
     # Validate memory backend
     memory_backend = config.get("MEMORY_BACKEND", "local")
@@ -326,6 +326,12 @@ def _validate_provider_config(config: Dict[str, str]) -> None:
     if secrets_provider == "gcp_secret_manager" and not config.get("GCP_PROJECT_ID"):
         raise ConfigError(
             "secrets.provider is set to 'gcp_secret_manager' but gcp.project_id is not configured.\n"
+            "Add 'gcp.project_id: your-project-id' to bot.yaml"
+        )
+    
+    if model_provider == "vertex_anthropic" and not config.get("GCP_PROJECT_ID"):
+        raise ConfigError(
+            "model.provider is set to 'vertex_anthropic' but gcp.project_id is not configured.\n"
             "Add 'gcp.project_id: your-project-id' to bot.yaml"
         )
 
@@ -608,6 +614,7 @@ def get_model(
     - google_vertexai: Google Vertex AI (Gemini models)
     - openai: OpenAI (GPT models)
     - anthropic: Anthropic (Claude models)
+    - vertex_anthropic: Anthropic Claude via Google Vertex AI Model Garden
 
     Args:
         provider: Model provider override (default: from MODEL_PROVIDER env var)
@@ -706,10 +713,32 @@ def get_model(
             max_tokens=max_tokens,
         )
 
+    elif provider == "vertex_anthropic":
+        try:
+            from langchain_google_vertexai.model_garden import ChatAnthropicVertex
+        except ImportError:
+            raise ImportError(
+                "anthropic[vertex] is required for vertex_anthropic provider. "
+                "Install with: pip install 'anthropic[vertex]'"
+            )
+        project = os.getenv("GCP_PROJECT_ID") or os.getenv("VERTEX_AI_PROJECT_ID")
+        if not project:
+            raise ValueError(
+                "vertex_anthropic provider requires GCP_PROJECT_ID or VERTEX_AI_PROJECT_ID. "
+                "Set gcp.project_id in bot.yaml or GCP_PROJECT_ID env var."
+            )
+        return ChatAnthropicVertex(
+            model_name=model_name,
+            project=project,
+            location=os.getenv("VERTEX_AI_LOCATION", "us-east5"),
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+
     else:
         raise ValueError(
             f"Unsupported model provider: {provider}. "
-            f"Supported providers: google_vertexai, openai, anthropic"
+            f"Supported providers: google_vertexai, openai, anthropic, vertex_anthropic"
         )
 
 
