@@ -733,6 +733,7 @@ def get_model(
             location=os.getenv("VERTEX_AI_LOCATION", "us-east5"),
             temperature=temperature,
             max_tokens=max_tokens,
+            model_kwargs={"extra_headers": {"anthropic-beta": "prompt-caching-2024-07-31"}},
         )
 
     else:
