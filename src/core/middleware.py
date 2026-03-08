@@ -10,7 +10,6 @@ from datetime import datetime
 from typing import Any, Optional
 
 from langchain_core.language_models import BaseChatModel
-from langchain.chat_models import init_chat_model
 from langgraph.store.base import BaseStore
 
 # Try to import from deepagents first, fall back to langchain
@@ -62,7 +61,10 @@ class SessionSummaryMiddleware(AgentMiddleware):
         """
         super().__init__()
         self.store = store
-        self.summary_model = summary_model or init_chat_model("gemini-2.5-flash")
+        if summary_model is None:
+            from .config import get_model
+            summary_model = get_model()
+        self.summary_model = summary_model
         self.min_messages = min_messages_to_summarize
         self.namespace = namespace
     
@@ -224,12 +226,13 @@ def create_default_middleware_stack(store: Optional[BaseStore] = None) -> list:
     Returns:
         List of middleware instances
     """
+    import os
     from langchain.agents.middleware import SummarizationMiddleware
-    
+
     middleware = [
         # In-context summarization (ephemeral, keeps LLM context small)
         SummarizationMiddleware(
-            model="gemini-2.5-flash",
+            model=os.getenv("MODEL_NAME", "gemini-2.5-flash"),
             trigger=("tokens", 4000),
             keep=("messages", 20),
         ),
